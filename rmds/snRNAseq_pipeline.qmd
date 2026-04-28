@@ -1,0 +1,262 @@
+---
+title: "SingleCell RNA seq general pipeline"
+author: "Santiago López Begines"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    highlight: tango
+    fig_width: 10
+    fig_height: 8
+    fig_caption: true
+    code_folding: hide
+    number_sections: true
+    toc: true
+    toc_float:
+      collapsed: true
+      smooth_scroll: false
+editor_options:
+  markdown:
+    wrap: sentence
+---
+
+# 0. Setup
+
+## Environment and global parameters
+
+```{r env_setup}
+rm(list = ls())   # Clean environment
+gc()              # Release memory
+
+# --- Global parameters --------------------------------------------------------
+image_number <- 1
+output_path  <- "output/GSE262881/SCT/"
+
+# Data paths
+DATA_DIR  <- "../rawdata/GSE262881_RAW"
+
+# Random seed for reproducibility
+set.seed(123)
+options(scipen = 3, digits = 3)
+
+# Memory: sequential plan (i7-7560U: 2 physical cores, 16 GB RAM)
+# Parallel overhead outweighs benefits on 2-core hardware; protects RAM
+library(future)
+plan("sequential")
+```
+
+## Packages
+
+```{r packages}
+source("../code/00_packages.R")
+```
+
+## Functions and global variables
+
+```{r load_globals}
+source("../code/global_variables.R")
+source("../code/01_aux_functions.R")
+source("../code/02_sc_functions.R")
+```
+
+
+# Input data
+
+**Dataset:** GSE262881 — Wang et al., BMC Biology (2025) 23:124  
+**Paper:** A single-cell transcriptomic atlas of all cell types in the brain of 5xFAD Alzheimer mice in response to dietary inulin supplementation
+
+---
+
+## Full Processing Workflow (per Methods, p. 19)
+
+```
+FASTQ  →  CellRanger 7.1.0  →  raw_feature_bc_matrix/
+                                        ↓
+                              CellBender 0.2.2
+                                        ↓
+                    *_CellBender_feature_bc_matrix_filtered.h5   ← .h5 files on GEO
+
+FASTQ  →  CellRanger 7.1.0 (BAM)  →  velocyto 0.17.17
+                                        ↓
+                                    *.loom.gz   ← .loom files on GEO
+```
+
+We start by reading in the data. The Read10X() function reads in the
+output of the cellranger pipeline from 10X, returning a unique molecular
+identified (UMI) count matrix. The values in this matrix represent the
+number of molecules for each feature (i.e. gene; row) that are detected
+in each cell (column). Note that more recent versions of cellranger now
+also output using the h5 file format, which can be read in using the
+Read10X_h5() function in Seurat.
+
+Data from Wang et al., BMC Biology (2025) 23:124 comes from CellBender filtering. The paper check 2 conditions, Control vs. Insulin; in 4 different parts of brain: Us
+
+
+## Read 10X matrices (with checkpoint)
+
+Each library is read and saved individuallyto avoid holding all count matrices in RAM simultaneously.
+
+```{r import_raw, message=TRUE}
+# define output_path y CHECKPOINT_PREFIX in global_variables                                                                                                    
+
+# Checkpoint: all raw Seurat objects
+# Con checkpoint (recomendado — 24 ficheros h5 tardan)    
+  seurat_list <- load_h5_samples(data_path, checkpoint = "01_raw_data")                                          # Only desired region, without checkpoint
+# seurat_list <- load_h5_samples(data_path, regions = "forebrain")
+gc()          
+     
+```
+
+## Import summary
+
+```{r import_summary}
+# Quick check of matching quality (cells found in metadata)
+import_tbl <- do.call(rbind, lapply(names(seurat_list), function(nm) {
+  obj <- seurat_list[[nm]]
+  n_total     <- ncol(obj)
+  #n_matched   <- sum(!is.na(obj$Status))
+  #n_healthy   <- sum(obj$Status == "Healthy", na.rm = TRUE)
+  #n_psa       <- sum(obj$Status == "PSA",     na.rm = TRUE)
+  #n_pso       <- sum(obj$Status == "PSO",     na.rm = TRUE)
+  data.frame(Library = nm, N_Cells = n_total,
+             row.names = NULL)
+}))
+
+print(import_tbl)
+cat("\nTotal barcodes imported:", sum(import_tbl$N_Cells), "\n")
+```
+# 2. QC Metrics Calculation
+
+Add human-specific QC metrics.
+Key difference from mouse data: mitochondrial genes use **`^MT-`** (uppercase).
+
+```{r add_qc_metrics}
+if (check_checkpoint("02_seurat_qc")) {
+  seurat_qc <- load_checkpoint("02_seurat_qc")
+} else {
+  #seurat_raw <- load_checkpoint("01_raw_seurat")
+  seurat_qc <- lapply(seurat_list, function (x){
+    add_qc_metrics(x, pattern_mito = mito_pattern , pattern_ribo = ribo_pattern)})
+  rm(seurat_list) 
+  gc()
+  save_checkpoint(seurat_qc, "02_seurat_qc")
+}
+```
+## Pre-filter QC overview (combined across all libraries)
+```{r qc_combined_meta}
+combined_meta <- build_combined_meta(seurat_qc)
+cat("Total barcodes with QC metrics:", nrow(combined_meta), "\n")
+cat("Libraries:", length(unique(combined_meta$library)), "\n")
+```
+### Cells per library
+
+```{r}
+combined_plot <- combined_meta %>%
+  ggplot(aes(x = library, fill = condition)) +
+  geom_bar() +
+  theme_classic() +
+  theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1)) +
+  theme(plot.title = element_text(hjust = 0.5, face = "bold")) +
+  ggtitle("Number of Cells per Library") +
+  xlab("Library") +
+  ylab("Number of Cells") 
+  # + facet_wrap(~region)
+
+print(combined_plot)
+```
+### UMI counts distribution
+
+The UMI counts per cell (nCount_RNA) should generally be above 500, that
+is the low end of what we expect. If UMI counts are between 500-1000
+counts, it is usable but the cells probably should have been sequenced
+more deeply.
+### Genes detected per cell
+We have similar expectations for gene detection as for UMI detection,
+although it may be a bit lower than UMIs. For high quality data, the
+proportional histogram should contain a single large peak that
+represents cells that were encapsulated. If we see a small shoulder to
+the right of the major peak (not present in our data), or a bimodal
+distribution of the cells, that can indicate a couple of things. It
+might be that there are a set of cells that failed for some reason. It
+could also be that there are biologically different types of cells (i.e.
+quiescent cell populations, less complex cells of interest), and/or one
+type is much smaller than the other (i.e. cells with high counts may be
+cells that are larger in size). Therefore, this threshold should be
+assessed with other metrics that we describe in this lesson.
+
+```{r}
+combined_plot <-  combined_meta %>%
+  ggplot(aes(x = nCount_RNA, color = library, fill = library)) +
+  geom_density(alpha = 0.15) +
+  scale_x_log10() +
+  geom_vline(xintercept = QC_MIN_COUNTS, linetype = "dashed", color = "red") +
+  geom_vline(xintercept = QC_MAX_COUNTS, linetype = "dashed", color = "red") +
+  theme_classic(base_size = 10) +
+  theme(legend.position = "none") +
+  labs(title = "UMI distribution per library (pre-filter)",
+       x = "nCount_RNA (log10)", y = "Density")
+
+
+print(combined_plot)
+```
+
+
+### Mitochondrial percentage
+
+This metric can identify whether there is a large amount of
+mitochondrial contamination from dead or dying cells. We define poor
+quality samples for mitochondrial counts as cells which surpass the 0.2
+mitochondrial ratio mark, unless of course you are expecting this in
+your sample.
+
+
+```{r}
+
+```
+
+
+### UMIs vs. genes detected (coloured by MT%)
+
+Two metrics that are often evaluated together are the number of UMIs and
+the number of genes detected per cell. Here, we have plotted the number
+of genes versus the numnber of UMIs coloured by the fraction of
+mitochondrial reads. Mitochondrial read fractions are only high (light
+blue color) in particularly low count cells with few detected genes.
+This could be indicative of damaged/dying cells whose cytoplasmic mRNA
+has leaked out through a broken membrane, and thus, only mRNA located in
+the mitochondria is still conserved. These cells are filtered out by our
+count and gene number thresholds. Jointly visualizing the count and gene
+thresholds shows the joint filtering effect.
+
+Cells that are poor quality are likely to have low genes and UMIs per
+cell, and correspond to the data points in the bottom left quadrant of
+the plot. Good cells will generally exhibit both higher number of genes
+per cell and higher numbers of UMIs.
+
+With this plot we also evaluate the slope of the line, and any scatter
+of data points in the bottom right hand quadrant of the plot. These
+cells have a high number of UMIs but only a few number of genes. These
+could be dying cells, but also could represent a population of a low
+complexity celltype (i.e red blood cells).
+
+```{r}
+
+```
+
+
+### Complexity (log10 Genes per UMI)
+
+
+We can see the samples where we sequenced each cell less have a higher
+overall complexity, that is because we have not started saturating the
+sequencing for any given gene for these samples. Outlier cells in these
+samples might be cells that have a less complex RNA species than other
+cells. Sometimes we can detect contamination with low complexity cell
+types like red blood cells via this metric. Generally, we expect the
+novelty score to be above 0.80.
+
+```{r}
+
+```
+
+
+

@@ -1,0 +1,2 @@
+[08:47:49] [START] 06_integration.R — log: /home/santi/github_repos/propietary/snRNAseq_mouse/logs/06_integration_20260418_084749.log
+[08:47:49] [ABORT] checkpoint_05_sct_objects.rds not found at: /home/santi/github_repos/propietary/snRNAseq_mouse/output/GSE194315/SCT/RData/

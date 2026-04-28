@@ -1,84 +1,129 @@
-# Function to load libraries from CRAN using pak
-install_and_load_library <- function(lib_names) {
-  if (!requireNamespace("pak", quietly = TRUE)) {
-    install.packages("pak")
-  }
+# ==============================================================================
+# Package Loading — GSE194315 PBMC CITE-seq Analysis
+# All packages required for the full pipeline
+# ==============================================================================
 
-  missing_libs <- lib_names[!sapply(lib_names, requireNamespace, quietly = TRUE)]
+# Check pak package
+if ("pak" %in% installed.packages()) {
+  library("pak")
+} else {
+  install.packages("pak")
+}
 
-  if (length(missing_libs) > 0) {
-    pak::pkg_install(missing_libs, dependencies = TRUE)
-  }
-
-  # Load all libraries
-  for (lib in lib_names) {
-    library(lib, character.only = TRUE)
+# Helper: install if missing -----------------------------------------------
+install_if_missing <- function(pkg, bioc = FALSE) {
+  if (!requireNamespace(pkg, quietly = TRUE)) {
+    message("  [INSTALL] Installing: ", pkg)
+    if (bioc) {
+      if (!requireNamespace("BiocManager", quietly = TRUE)) {
+        pak::pkg_install("BiocManager")
+      }
+      BiocManager::install(pkg, update = FALSE, ask = FALSE)
+    } else {
+      pak::pkg_install(pkg)
+    }
   }
 }
 
-# Function to load libraries from Bioconductor using pak
-install_and_load_library_bioconductor <- function(lib_names) {
-  if (!requireNamespace("pak", quietly = TRUE)) {
-    install.packages("pak")
-  }
-
-  missing_libs <- lib_names[!sapply(lib_names, requireNamespace, quietly = TRUE)]
-
-  if (length(missing_libs) > 0) {
-    # pak handles Bioconductor packages automatically with bioc:: prefix
-    bioc_libs <- paste0("bioc::", missing_libs)
-    pak::pkg_install(bioc_libs, dependencies = TRUE, ask = FALSE)
-  }
-
-  # Load all libraries
-  for (lib in lib_names) {
-    library(lib, character.only = TRUE)
-  }
-}
-
-# Usage example
-libraries <- c(
-  "BiocManager", "R.utils", "Seurat", "plan", "tidyverse", "data.table",
-  "kableExtra", "ggrepel", "promises", "furrr", "purrr",
-  "readxl", "future", "future.apply", "sctransform",
-  "presto", "BPCells", "SeuratData", "SeuratData", "Azimuth",
-  "SeuratWrappers", "glmGamPoi", "Signac", "writexl", "patchwork",
-  "remotes", "tictoc", "openxlsx", "clustree"
-)
-
-libraries_bioconductor <- c(
-  "DEP", "SummarizedExperiment", "SingleR", "MAST",
-  "genekitr", "clusterProfiler", "enrichplot",
-  "AnnotationDbi", "topGO", "STRINGdb", "AnnotationHub",
-  "rrvgo", "europepmc", "Rgraphviz", "pathview", "DOSE",
-  "viridis", "gson", "tidytree", "celldex", "glmGamPoi",
-  "biomaRt", "org.Mm.eg.db", "limma", "ComplexHeatmap",
-  "edgeR", "STRINGdb", "scDblFinder", "KEGGREST"
-)
-
-install_and_load_library(libraries)
-install_and_load_library_bioconductor(libraries_bioconductor)
-
-# Install GitHub packages with remotes (more stable for complex builds)
-github_packages <- c(
-  "satijalab/seurat-data",
-  "satijalab/azimuth",
-  "satijalab/seurat-wrappers",
-  "mojaveazure/seurat-disk",
-  "bnprks/BPCells/r"
-)
-
-# Other GitHub packages
-pak::pkg_install("satijalab/seurat-data")
-pak::pkg_install("satijalab/azimuth")
-pak::pkg_install("satijalab/seurat-wrappers")
-pak::pkg_install("mojaveazure/seurat-disk")
-for (pkg in github_packages) {
-  pkg_name <- basename(pkg)
+# Helper: install from GitHub if missing (DoubletFinder) --------------------
+install_github_if_missing <- function(pkg_name, github_repo) {
   if (!requireNamespace(pkg_name, quietly = TRUE)) {
-    remotes::install_github(pkg, upgrade = "never", quiet = TRUE)
+    message("  [INSTALL] Installing from GitHub: ", github_repo)
+    if (!requireNamespace("remotes", quietly = TRUE)) {
+      pak::pkg_install("remotes")
+    }
+    remotes::install_github(github_repo, upgrade = "never")
   }
 }
 
-# Remove variables from GlobalEnvironment
-rm(libraries, libraries_bioconductor, install_and_load_library, install_and_load_library_bioconductor)
+# =============================================================================
+# CRAN packages
+# =============================================================================
+message("[PACKAGES] Loading CRAN packages...")
+
+cran_packages <- c(
+  # Core data manipulation
+  "dplyr", "tidyr", "tibble", "stringr", "purrr", "data.table",
+  # Visualization
+  "ggplot2", "patchwork", "ggrepel", "scales",
+  # I/O
+  "readxl", "writexl",
+  # Utilities
+  "tictoc", "remotes", "future", "future.apply",
+  # Clustering diagnostics
+  "clustree"
+)
+
+for (pkg in cran_packages) install_if_missing(pkg)
+invisible(lapply(cran_packages, library, character.only = TRUE, warn.conflicts = TRUE, quietly = TRUE))
+
+# =============================================================================
+# Bioconductor packages
+# =============================================================================
+message("[PACKAGES] Loading Bioconductor packages...")
+
+bioc_packages <- c(
+  # Core single-cell
+  "Seurat", # Main scRNA-seq analysis framework
+  "SeuratObject", # Seurat data structures
+  # Cell type annotation
+  "SingleR", # Automated cell type annotation
+  "celldex", # Reference datasets for SingleR
+  # Gene annotations (Human)
+  "org.Hs.eg.db",
+  # Bioconductor infrastructure
+  "BiocParallel",
+  "SummarizedExperiment",
+  "S4Vectors",
+  # Optional: faster SCTransform backend
+  "glmGamPoi",
+  # Optional: faster DE testing
+  "MAST",
+  # Visualization:
+  "EnhancedVolcano",
+  # Doublet detection:
+  "scDblFinder"
+)
+
+for (pkg in bioc_packages) install_if_missing(pkg, bioc = TRUE)
+invisible(lapply(bioc_packages, library, character.only = TRUE, warn.conflicts = TRUE, quietly = TRUE))
+
+# =============================================================================
+# GitHub packages
+# =============================================================================
+message("[PACKAGES] Checking GitHub packages...")
+
+# DoubletFinder — doublet detection (not on CRAN/Bioconductor)
+install_github_if_missing("DoubletFinder", "chris-mcginnis-ucsf/DoubletFinder")
+library(DoubletFinder)
+
+# SeuratDisk — optional, for H5Seurat save/load
+# Uncomment if needed:
+install_github_if_missing("SeuratDisk", "mojaveazure/seurat-disk")
+if (requireNamespace("SeuratDisk", quietly = TRUE)) library(SeuratDisk)
+
+# SeuratData —
+# Uncomment if needed:
+install_github_if_missing("SeuratData", "satijalab/seurat-data")
+if (requireNamespace("SeuratData", quietly = TRUE)) library(SeuratData)
+
+# SeuratWrappers —
+# Uncomment if needed:
+install_github_if_missing("SeuratWrappers", "satijalab/seurat-wrappers")
+if (requireNamespace("SeuratWrappers", quietly = TRUE)) library(SeuratWrappers)
+
+
+# =============================================================================
+# Session info
+# =============================================================================
+message("\n[PACKAGES] All packages loaded. Session info:")
+cat("R version:", R.version$version.string, "\n")
+cat("Seurat version:", as.character(packageVersion("Seurat")), "\n")
+cat("SingleR version:", as.character(packageVersion("SingleR")), "\n")
+cat("DoubletFinder loaded:", requireNamespace("DoubletFinder", quietly = TRUE), "\n")
+cat("glmGamPoi available:", requireNamespace("glmGamPoi", quietly = TRUE), "\n")
+
+# Clean enviroment
+rm(install_if_missing, install_github_if_missing, cran_packages, bioc_packages)
+
+# renv::snapshot(type = "all") # Uncomment to save package versions to renv.lock

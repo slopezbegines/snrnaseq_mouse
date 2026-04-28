@@ -1,0 +1,11 @@
+NULL
+[12:05:20] [START] 06_integration.R — log: /home/santi/github_repos/propietary/snRNAseq_mouse/logs/06_integration_20260418_120520.log
+[12:05:20] [LOAD] checkpoint_05_sct_objects found — loading...
+[CHECKPOINT] Loaded: /home/santi/github_repos/propietary/snRNAseq_mouse/output/GSE194315/SCT/RData/checkpoint_05_sct_objects.rds  (12:05:20)
+SCT objects loaded: 28 
+Total cells (post-SCT): 322642 
+[12:08:44] [OK] SCT objects: 28 libraries, 322642 total cells
+[12:08:44] [RAM] Before integration: 24.7 GB used
+[12:08:44] [INTEGRATION] SelectIntegrationFeatures (nfeatures=2000)...
+[12:08:53] [OK] Features selected: 2000
+[12:08:53] [INTEGRATION] PrepSCTIntegration...

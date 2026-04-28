@@ -1,0 +1,597 @@
+
+
+# 0. Loading Libraries
+
+## Loading functions
+```{r}
+output_path <- "output/SC_UbCRE/SCTransform/"
+source("code/global_variables.R")
+```
+
+
+```{r}
+source("code/00_packages.R")
+```
+
+# 1. Importing data
+We start by reading in the data. The Read10X() function reads in the output of the cellranger pipeline from 10X, returning a unique molecular identified (UMI) count matrix. The values in this matrix represent the number of molecules for each feature (i.e. gene; row) that are detected in each cell (column). Note that more recent versions of cellranger now also output using the h5 file format, which can be read in using the Read10X_h5() function in Seurat.
+```{r}
+tic()
+#import data
+# Load the PBMC dataset
+ubc_c1 <- Seurat::Read10X(data.dir = "rawdata/SC/AWGC-1_Ctrl-1_results")
+ubc_c2 <- Seurat::Read10X(data.dir = "rawdata/SC/AWGC-2_Ctrl-2_results")
+ubc_ko1 <- Seurat::Read10X(data.dir = "rawdata/SC/AWGC-3_KOut-1_results")
+ubc_ko2 <- Seurat::Read10X(data.dir = "rawdata/SC/AWGC-4_KOut-2_results")
+
+# Initialize the Seurat object with the raw (non-normalized data).
+ubc_c1 <- CreateSeuratObject(counts = ubc_c1, project = "wt_1", min.cells = 3, min.features = 200)
+ubc_c2 <- CreateSeuratObject(counts = ubc_c2, project = "wt_2", min.cells = 3, min.features = 200)
+ubc_ko1 <- CreateSeuratObject(counts = ubc_ko1, project = "ko_1", min.cells = 3, min.features = 200)
+ubc_ko2 <- CreateSeuratObject(counts = ubc_ko2, project = "ko_2", min.cells = 3, min.features = 200)
+
+toc()
+```
+
+Create vector with SeurtalObjects names for automatization
+
+```{r}
+seurat_names <- c("ubc_c1", "ubc_c2", "ubc_ko1", "ubc_ko2")
+```
+
+```{r}
+tic()
+# Export results ####
+lapply(seurat_names, function(x) {
+  obj <- get(x)  # Retrieve the object
+  save(obj, file = paste0(output_path, "RData/", x, ".RData"))
+})
+toc()
+```
+
+# 2. Data preprocessing for each library
+
+## Percentage Features
+```{r}
+# The [[ operator can add columns to object metadata. This is a great place to stash QC stats
+lapply(seurat_names, function(x) {
+  obj <- get(x)  # Retrieve the Seurat object
+  # store mitochondrial percentage in object meta data
+  obj <- PercentageFeatureSet(obj, pattern = "^MT-", col.name = "percent.mt")
+  assign(x, obj, envir = .GlobalEnv)  # Reassign the modified object back to the global environment
+})
+```
+
+# Increase memory limit for future package
+```{r}
+# Increase memory limit for future package
+options(future.globals.maxSize = 16000 * 1024^2) # 16 GB limit
+
+library(future)
+plan("multisession", workers = 4) # Use 4 workers
+```
+
+## Perform SCTransform
+```{r}
+# The [[ operator can add columns to object metadata. This is a great place to stash QC stats
+lapply(seurat_names, function(x) {
+  obj <- get(x)  # Retrieve the Seurat object
+  # run sctransform
+  obj <- SCTransform(obj, vars.to.regress = "percent.mt", verbose = FALSE)
+  assign(x, obj, envir = .GlobalEnv)  # Reassign the modified object back to the global environment
+})
+```
+
+# 3. Find Integration Anchors
+After transforming the data, identify integration anchors. Use the transformed Seurat objects for this step.
+
+```{r}
+tic()
+gc()
+# Paso 1: Seleccionar características de integración comunes
+integration_features <- SelectIntegrationFeatures(
+  object.list = list(ubc_c1, ubc_c2, ubc_ko1, ubc_ko2),
+  nfeatures = 3000 # Ajusta según sea necesario
+)
+
+# Paso 2: Preparar los objetos para la integración
+object.list <- PrepSCTIntegration(
+  object.list = list(ubc_c1, ubc_c2, ubc_ko1, ubc_ko2),
+  anchor.features = integration_features
+)
+gc()
+# Paso 3: Encontrar los anclajes de integración
+integration_anchors <- FindIntegrationAnchors(
+  object.list = object.list,
+  normalization.method = "SCT",
+  anchor.features = integration_features,
+  dims = 1:20,
+  verbose = FALSE
+)
+toc()
+```
+
+Use the identified anchors to integrate the datasets.
+```{r}
+# Increase memory limit for future package
+options(future.globals.maxSize = 28000 * 1024^2) # 16 GB limit
+tic()
+sct_data <- IntegrateData(
+  anchorset = integration_anchors,
+  normalization.method = "SCT",
+  verbose = TRUE,
+  dims = 1:20, # Reduce el rango de dimensiones
+)
+toc()
+
+```
+
+# 4.Linear dimensional reduction
+
+Next we perform PCA on the scaled data. By default, only the previously
+determined variable features are used as input, but can be defined using
+features argument if you wish to choose a different subset (if you do
+want to use a custom subset of features, make sure you pass these to
+ScaleData first).
+
+For the first principal components, Seurat outputs a list of genes with
+the most positive and negative loadings, representing modules of genes
+that exhibit either correlation (or anti-correlation) across
+single-cells in the dataset.
+
+```{r}
+tic()
+
+#Add PCA 
+
+  sct_data <- RunPCA(sct_data, features = VariableFeatures(object = sct_data))
+  
+  # Examine and visualize PCA results a few different ways
+  print(sct_data[["pca"]], dims = 1:5, nfeatures = 5)
+  
+  plot <- VizDimLoadings(sct_data, dims = 1:2, reduction = "pca")
+  print(plot)
+ # Set filename with incremented figure number
+  filename <- paste0(output_path, "figures/", sprintf("%03d", figure_counter), "_VimPCA_Loadings")
+  
+  # Save in TIFF and PDF formats
+  ggsave(paste0(filename, tiff_extension), plot, width = 8, height = 6, units = "in")
+  ggsave(paste0(filename, pdf_extension), plot, width = 8, height = 6, units = "in")
+  
+  # Increment the figure counter
+  figure_counter <<- figure_counter + 1  # Use <<- to update the external variable
+  
+toc()
+
+```
+
+## Elbow Plot
+
+Determine the ‘dimensionality’ of the dataset To overcome the extensive
+technical noise in any single feature for scRNA-seq data, Seurat
+clusters cells based on their PCA scores, with each PC essentially
+representing a ‘metafeature’ that combines information across a
+correlated feature set. The top principal components therefore represent
+a robust compression of the dataset. However, how many components should
+we choose to include? 10? 20? 100?
+
+In Macosko et al, we implemented a resampling test inspired by the
+JackStraw procedure. While still available in Seurat (see previous
+vignette), this is a slow and computationally expensive procedure, and
+we is no longer routinely used in single cell analysis.
+
+An alternative heuristic method generates an ‘Elbow plot’: a ranking of
+principle components based on the percentage of variance explained by
+each one (ElbowPlot() function). In this example, we can observe an
+‘elbow’ around PC9-10, suggesting that the majority of true signal is
+captured in the first 10 PCs.
+
+```{r}
+tic()
+
+  #ElbowPlot
+  plot <- ElbowPlot(sct_data)
+  print(plot)
+ # Set filename with incremented figure number
+  filename <- paste0(output_path, "figures/", sprintf("%03d", figure_counter), "_ElbowPlot")
+  # Save in TIFF and PDF formats
+  ggsave(paste0(filename, tiff_extension), plot, width = 8, height = 6, units = "in")
+  ggsave(paste0(filename, pdf_extension), plot, width = 8, height = 6, units = "in")
+  # Increment the figure counter
+  figure_counter <<- figure_counter + 1  # Use <<- to update the external variable
+  
+toc()
+
+
+```
+
+## Cluster cells
+
+Seurat applies a graph-based clustering approach, building upon initial
+strategies in (Macosko et al). Importantly, the distance metric which
+drives the clustering analysis (based on previously identified PCs)
+remains the same. However, our approach to partitioning the cellular
+distance matrix into clusters has dramatically improved. Our approach
+was heavily inspired by recent manuscripts which applied graph-based
+clustering approaches to scRNA-seq data [SNN-Cliq, Xu and Su,
+Bioinformatics, 2015] and CyTOF data [PhenoGraph, Levine et al., Cell,
+2015]. Briefly, these methods embed cells in a graph structure - for
+example a K-nearest neighbor (KNN) graph, with edges drawn between cells
+with similar feature expression patterns, and then attempt to partition
+this graph into highly interconnected ‘quasi-cliques’ or ‘communities’.
+
+As in PhenoGraph, we first construct a KNN graph based on the euclidean
+distance in PCA space, and refine the edge weights between any two cells
+based on the shared overlap in their local neighborhoods (Jaccard
+similarity). This step is performed using the FindNeighbors() function,
+and takes as input the previously defined dimensionality of the dataset
+(first 10 PCs).
+
+To cluster the cells, we next apply modularity optimization techniques
+such as the Louvain algorithm (default) or SLM [SLM, Blondel et al.,
+Journal of Statistical Mechanics], to iteratively group cells together,
+with the goal of optimizing the standard modularity function. The
+FindClusters() function implements this procedure, and contains a
+resolution parameter that sets the ‘granularity’ of the downstream
+clustering, with increased values leading to a greater number of
+clusters. We find that setting this parameter between 0.4-1.2 typically
+returns good results for single-cell datasets of around 3K cells.
+Optimal resolution often increases for larger datasets. The clusters can
+be found using the Idents() function.
+
+```{r}
+sct_data <- FindNeighbors(sct_data, dims = 1:11)
+sct_data <- FindClusters(sct_data, resolution = 0.5)
+```
+
+## UMAP dimensions
+
+```{r}
+tic()
+  #UMAP
+  sct_data <- RunUMAP(sct_data, dims = 1:11)
+toc()
+```
+
+## Plot UMAP & UMAP Features
+
+```{r}
+tic()
+ # note that you can set `label = TRUE` or use the LabelClusters function to help label individual clusters
+  plot <- DimPlot(sct_data, reduction = "umap", label = TRUE)
+
+  print(plot)
+  # Set filename with incremented figure number
+  filename <- paste0(output_path, "figures/", sprintf("%03d", figure_counter), "_UMAP")
+  # Save in TIFF and PDF formats
+  ggsave(paste0(filename, tiff_extension), plot, width = 8, height = 6, units = "in")
+  ggsave(paste0(filename, pdf_extension), plot, width = 8, height = 6, units = "in")
+  # Increment the figure counter
+  figure_counter <<- figure_counter + 1  # Use <<- to update the external variable
+    
+
+
+# note that you can set `label = TRUE` or use the LabelClusters function to help label individual clusters
+  plot <- DimPlot(sct_data, reduction = "umap", label = TRUE)
+  plot <- DimPlot(sct_data, reduction = "umap", split.by="orig.ident", ncol = 2)
+  
+  print(plot)
+  # Set filename with incremented figure number
+  filename <- paste0(output_path, "figures/", sprintf("%03d", figure_counter), "_UMAP_ident")
+  # Save in TIFF and PDF formats
+  ggsave(paste0(filename, tiff_extension), plot, width = 8, height = 6, units = "in")
+  ggsave(paste0(filename, pdf_extension), plot, width = 8, height = 6, units = "in")
+  # Increment the figure counter
+  figure_counter <<- figure_counter + 1  # Use <<- to update the external variable
+  
+  
+  #UMAP by features
+  features <- c("nFeature_RNA", "nCount_RNA")
+  feature_plot <- FeaturePlot(sct_data, features = features)
+    print(feature_plot)
+  # Set filename with incremented figure number
+  filename <- paste0(output_path, "figures/", sprintf("%03d", figure_counter), "_Feature_plot")
+  # Save in TIFF and PDF formats
+  ggsave(paste0(filename, tiff_extension), feature_plot, width = 8, height = 6, units = "in")
+  ggsave(paste0(filename, pdf_extension), feature_plot, width = 8, height = 6, units = "in")
+  # Increment the figure counter
+  figure_counter <<- figure_counter + 1  # Use <<- to update the external variable
+toc()
+
+```
+
+## UMAP HVGs
+
+```{r}
+top <-head(VariableFeatures(sct_data),10)
+
+  #UMAP by features
+  feature_plot <- FeaturePlot(sct_data, features = top, ncol = 5)
+    print(feature_plot)
+  # Set filename with incremented figure number
+  filename <- paste0(output_path, "figures/", sprintf("%03d", figure_counter), "_Feature_plot")
+  # Save in TIFF and PDF formats
+  ggsave(paste0(filename, tiff_extension), feature_plot, width = 12, height = 6, units = "in")
+  ggsave(paste0(filename, pdf_extension), feature_plot, width = 12, height = 6, units = "in")
+  # Increment the figure counter
+  figure_counter <<- figure_counter + 1  # Use <<- to update the external variable
+  
+```
+
+## UMAP Dnajc5
+
+```{r}
+  #UMAP by features
+  feature_plot <- FeaturePlot(sct_data, features = "Dnajc5",split.by="orig.ident", ncol = 2 )
+    print(feature_plot)
+  # Set filename with incremented figure number
+  filename <- paste0(output_path, "figures/", sprintf("%03d", figure_counter), "_Feature_plot")
+  # Save in TIFF and PDF formats
+  ggsave(paste0(filename, tiff_extension), feature_plot, width = 12, height = 6, units = "in")
+  ggsave(paste0(filename, pdf_extension), feature_plot, width = 12, height = 6, units = "in")
+  # Increment the figure counter
+  figure_counter <<- figure_counter + 1  # Use <<- to update the external variable
+  
+```
+
+```{r}
+tic()
+SaveH5Seurat(sct_data,
+             filename = paste0(output_path, "RData/","UBC_experiment.h5Seurat"),
+             overwrite = TRUE, 
+             verbose = TRUE)
+toc()
+```
+
+#5. Finding differentially expressed features (cluster biomarkers)
+Seurat can help you find markers that define clusters via differential
+expression (DE). By default, it identifies positive and negative markers
+of a single cluster (specified in ident.1), compared to all other cells.
+FindAllMarkers() automates this process for all clusters, but you can
+also test groups of clusters vs. each other, or against all cells.
+
+In Seurat v5, we use the presto package (as described here and available
+for installation here), to dramatically improve the speed of DE
+analysis, particularly for large datasets. For users who are not using
+presto, you can examine the documentation for this function
+(?FindMarkers) to explore the min.pct and logfc.threshold parameters,
+which can be increased in order to increase the speed of DE testing.
+
+```{r}
+# find markers for every cluster compared to all remaining cells, report only the positive
+# ones
+# Encuentra marcadores de todos los clusters
+cluster.markers <- FindAllMarkers(sct_data, only.pos = TRUE, min.pct = 0.25, logfc.threshold = 0.25)
+
+sct_data.markers <- FindAllMarkers(sct_data, 
+                              logfc.threshold = 0.1,
+                              min.pct = 0.1,
+                              only.pos = TRUE)
+```
+
+```{r}
+#Generate a list 
+cluster_list <- sct_data.markers %>%
+  group_split(cluster) %>%
+  set_names(paste0("cluster_", unique(sct_data.markers$cluster)))
+
+cluster_list %>% 
+write_xlsx(paste0(output_path,"tables/","cluster_list.xlsx"))
+```
+
+## HeatMap
+
+```{r}
+sct_data.markers %>%
+    group_by(cluster) %>%
+    dplyr::filter(avg_log2FC > 1) %>%
+    slice_head(n = 10) %>%
+    ungroup() -> top10
+
+
+plot <- DoHeatmap(sct_data, features = top10$gene) 
+print(plot)
+  # Set filename with incremented figure number
+  filename <- paste0(output_path, "figures/", sprintf("%03d", figure_counter), "HeatMap_cluster_plot")
+  # Save in TIFF and PDF formats
+  ggsave(paste0(filename, tiff_extension), plot, width = 12, height = 6, units = "in")
+  ggsave(paste0(filename, pdf_extension), plot, width = 12, height = 6, units = "in")
+  # Increment the figure counter
+  figure_counter <<- figure_counter + 1  # Use <<- to update the external variable
+```
+
+# 6. Clustering association
+
+1.  Use 'SingleR' is a widely used tool that compares gene expression
+    profiles of your clusters to predefined reference databases. Load an
+    appropriate reference database. For example:
+
+-   MouseRNAseqData: Reference for murine tissues.
+-   ImmGenData: Immunological reference.
+-   HumanPrimaryCellAtlasData: For human cells.
+
+2.  Use scType for fast annotation 'scType' is a simpler, more
+    customizable tool that uses user-defined or database-available
+    marker lists.
+
+    Comparison between 'SingleR' and 'scType'
+    
+    | Feature           | SingleR                         | scType            |
+    |-------------------|---------------------------------|-------------------|
+    | **Ease of use**   | More robust but more technical  |  Simpler          |
+    | **Database**      | Use predefined references       | Use marker lists  |
+    | **Customization** | Limited                         | Very customizable |
+    | **Speed**         | Moderate                        |  Very fast        |
+
+    : Recommendation If you have a well-characterized dataset (such as
+    mouse brain transcriptomics), use SingleR with a database such as
+    MouseRNAseqData. If you prefer greater flexibility or speed, try
+    scType with specific marker lists.
+
+
+## Allen Brain Atlas clustering
+Download matrix Gene expression matrix and Table cell metadata from Allen Brain Atlas Cell Types Database: RNA-Seq Data (https://portal.brain-map.org/atlases-and-data/rnaseq)
+Whole Cortex & Hippocampus - 10x genomics (2020)
+with 10x-SMART-seq taxonomy (2021)
+```{r}
+
+# Extraer la matriz de expresión y las identidades de los clusters
+cluster.markers <- GetAssayData(data_merge, slot = "data")
+cluster.ids <- Idents(data_merge)
+
+# Cargar los archivos CSV
+median_data <- fread("rawdata/medians.csv")
+trimmed_means_data <- fread("rawdata/trimmed_means.csv")
+
+# Verificar las primeras filas
+head(median_data)
+head(trimmed_means_data)
+
+# Revisar dimensiones
+dim(median_data)
+dim(trimmed_means_data)
+
+# Convertir a matriz
+median_matrix <- as.matrix(median_data[ , -1, with = FALSE])  # Asumiendo que la primera columna son los nombres de genes
+rownames(median_matrix) <- median_data[[1]]  # Asignar nombres de genes a las filas
+
+trimmed_means_matrix <- as.matrix(trimmed_means_data[ , -1, with = FALSE])  # Similar al anterior
+rownames(trimmed_means_matrix) <- trimmed_means_data[[1]]
+
+# Crear referencia de SingleR
+# Crear un nuevo objeto SummarizedExperiment con logcounts
+reference_median <- SummarizedExperiment(
+    assays = list(logcounts = log1p(median_matrix)), # Aplicar log-transformation
+    rowData = DataFrame(gene = rownames(median_matrix)),
+    colData = DataFrame(label.main = colnames(median_matrix))
+)
+# Revisar las etiquetas
+colData(reference_median)
+
+# Confirmar que `label.main` contiene los nombres de los tipos celulares
+reference_median$label.main <- colnames(median_matrix)
+
+reference_trimmed <- SummarizedExperiment(
+    assays = list(logcounts = log1p(trimmed_means_matrix)), # Aplicar log-transformation
+    rowData = DataFrame(gene = rownames(trimmed_means_matrix)),
+    colData = DataFrame(label.main = colnames(trimmed_means_matrix))
+)
+# Revisar las etiquetas
+colData(reference_trimmed)
+
+# Confirmar que `label.main` contiene los nombres de los tipos celulares
+reference_trimmed$label.main <- colnames(trimmed_means_matrix)
+```
+
+
+```{r}
+# Comparar con la base de datos de referencia
+annotations_median <- SingleR(test = cluster.markers, 
+                       ref = reference_median, 
+                       labels = reference_median$label.main,
+                       clusters = cluster.ids)
+
+
+# Revisar resultados
+head(annotations_median)
+```
+
+
+```{r}
+# Comparar con la base de datos de referencia
+annotations_trimmed <- SingleR(test = cluster.markers, 
+                       ref = reference_trimmed, 
+                       labels = reference_trimmed$label.main,
+                       clusters = cluster.ids)
+
+
+# Revisar resultados
+head(annotations_trimmed)
+```
+
+## Plot Median
+```{r}
+new.cluster.median <- annotations_median$labels
+names(new.cluster.median) <- levels(data_merge)
+data_merge_median <- RenameIdents(data_merge, new.cluster.median)
+```
+
+
+```{r}
+# Visualiza con las nuevas identidades
+plot <- DimPlot(data_merge_median, reduction = "umap", label = TRUE, repel = TRUE)
+print(plot)
+  # Set filename with incremented figure number
+  filename <- paste0(output_path, "figures/", sprintf("%03d", figure_counter), "UMAP_simple_cluster_plot")
+  # Save in TIFF and PDF formats
+  ggsave(paste0(filename, tiff_extension), plot, width = 12, height = 6, units = "in")
+  ggsave(paste0(filename, pdf_extension), plot, width = 12, height = 6, units = "in")
+  # Increment the figure counter
+  figure_counter <<- figure_counter + 1  # Use <<- to update the external variable
+
+```
+
+## Plot Trimmed
+```{r}
+new.cluster.trimmed <- annotations_trimmed$labels
+names(new.cluster.trimmed) <- levels(data_merge)
+data_merge_trimmed <- RenameIdents(data_merge, new.cluster.median)
+```
+
+
+```{r}
+# Visualiza con las nuevas identidades
+plot <- DimPlot(data_merge_trimmed, reduction = "umap", label = TRUE, repel = TRUE)
+print(plot)
+  # Set filename with incremented figure number
+  filename <- paste0(output_path, "figures/", sprintf("%03d", figure_counter), "UMAP_simple_cluster_plot")
+  # Save in TIFF and PDF formats
+  ggsave(paste0(filename, tiff_extension), plot, width = 12, height = 6, units = "in")
+  ggsave(paste0(filename, pdf_extension), plot, width = 12, height = 6, units = "in")
+  # Increment the figure counter
+  figure_counter <<- figure_counter + 1  # Use <<- to update the external variable
+
+```
+
+
+## MouseRNAseqData
+```{r}
+
+
+ref <- MouseRNAseqData()  # Change according needs
+# Extraer la matriz de expresión y las identidades de los clusters
+cluster.markers <- GetAssayData(data_merge, slot = "data")
+cluster.ids <- Idents(data_merge)
+
+# Comparar con la base de datos de referencia
+annotations_ms <- SingleR(test = cluster.markers, 
+                       ref = ref, 
+                       labels = ref$label.main,
+                       clusters = cluster.ids)
+
+# Ver los resultados
+head(annotations)
+```
+
+
+```{r}
+new.cluster.ids <- annotations_ms$labels
+names(new.cluster.ids) <- levels(data_merge)
+data_merge_ms <- RenameIdents(data_merge, new.cluster.ids)
+```
+
+
+```{r}
+# Visualiza con las nuevas identidades
+plot <- DimPlot(data_merge_ms, reduction = "umap", label = TRUE, repel = TRUE)
+print(plot)
+  # Set filename with incremented figure number
+  filename <- paste0(output_path, "figures/", sprintf("%03d", figure_counter), "UMAP_simple_cluster_plot")
+  # Save in TIFF and PDF formats
+  ggsave(paste0(filename, tiff_extension), plot, width = 12, height = 6, units = "in")
+  ggsave(paste0(filename, pdf_extension), plot, width = 12, height = 6, units = "in")
+  # Increment the figure counter
+  figure_counter <<- figure_counter + 1  # Use <<- to update the external variable
+
+```
+

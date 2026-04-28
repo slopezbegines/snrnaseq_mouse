@@ -1,0 +1,1192 @@
+
+
+# 0. Loading Libraries
+
+# Set up global parameters
+```{r}
+rm(list=ls()) #Clean enviroment
+gc() #Clean memory
+
+# Set up parameters
+image_number <- 1
+output_path <- "output/SC_UBC/Integrated/"
+set.seed(123)
+options(scipen = -1)  # Habilitar notación científica en R
+```
+
+## Loading functions
+```{r}
+source("code/global_variables.R")
+source("code/00_packages.R")
+source("code/01_sc_functions.R")
+```
+# 1. Importing data
+We start by reading in the data. The Read10X() function reads in the output of the cellranger pipeline from 10X, returning a unique molecular identified (UMI) count matrix. The values in this matrix represent the number of molecules for each feature (i.e. gene; row) that are detected in each cell (column). Note that more recent versions of cellranger now also output using the h5 file format, which can be read in using the Read10X_h5() function in Seurat.
+```{r}
+tic()
+#import data
+# Load the dataset. Select the folder for every library.
+
+c1 <- Seurat::Read10X(data.dir = "rawdata/SC/AWGC-1_Ctrl-1_results")
+c2 <- Seurat::Read10X(data.dir = "rawdata/SC/AWGC-2_Ctrl-2_results")
+ko1 <- Seurat::Read10X(data.dir = "rawdata/SC/AWGC-3_KOut-1_results")
+ko2 <- Seurat::Read10X(data.dir = "rawdata/SC/AWGC-4_KOut-2_results")
+
+# Initialize the Seurat object with the raw (non-normalized data).
+c1 <- CreateSeuratObject(counts = c1, project = "wt_1", min.cells = 3, min.features = 200)
+c2 <- CreateSeuratObject(counts = c2, project = "wt_2", min.cells = 3, min.features = 200)
+ko1 <- CreateSeuratObject(counts = ko1, project = "ko_1", min.cells = 3, min.features = 200)
+ko2 <- CreateSeuratObject(counts = ko2, project = "ko_2", min.cells = 3, min.features = 200)
+
+c1$condition <- "WT"
+c2$condition <- "WT"
+ko1$condition <- "KO"
+ko2$condition <- "KO"
+
+
+
+#Put all SeuratObjects in a vector and in a list for automatization
+#seurat_names <- c("ubc_c1", "ubc_c2", "ubc_ko1", "ubc_ko2")
+# Create a named list of Seurat objects
+seurat_objects <- list(
+  c1 = c1,
+  c2 = c2,
+  ko1 = ko1,
+  ko2 = ko2
+)
+# Remove the individual objects from the global environment
+rm(c1, c2, ko1, ko2)
+
+# Optionally, run garbage collection to free up memory
+gc()
+
+```
+
+```{r}
+tic()
+# Export results ####
+  save(seurat_objects, file = paste0(output_path, "RData/", "seurat_objects", ".RData"))  # Save using the name
+
+toc()
+
+load(paste0(output_path,"RData/seurat_objects.RData"))
+
+```
+# 2. Data preprocessing for each library
+
+Preprocessing taken from Seurat web page and 
+https://hbctraining.github.io/scRNA-seq/lessons/04_SC_quality_control.html
+ 
+## QC and selecting cells for further analysis
+Seurat allows you to easily explore QC metrics and filter cells based on any user-defined criteria. A few QC metrics commonly used by the community include
+## Identify mitochondrial genes
+The number of unique genes detected in each cell.
+Low-quality cells or empty droplets will often have very few genes
+Cell doublets or multiplets may exhibit an aberrantly high gene count
+Similarly, the total number of molecules detected within a cell (correlates strongly with unique genes)
+The percentage of reads that map to the mitochondrial genome
+Low-quality / dying cells often exhibit extensive mitochondrial contamination
+We calculate mitochondrial QC metrics with the 'PercentageFeatureSet()' function, which calculates the percentage of counts originating from a set of features
+We use the set of all genes starting with 'mt-' as a set of mitochondrial genes
+
+```{r}
+# Add QC stats to Seurat objects in the list
+seurat_objects <- lapply(names(seurat_objects), function(name) {
+  obj <- seurat_objects[[name]]  # Access the object from the list
+  # Add percentage of mitochondrial genes
+  obj$percent.mt <- PercentageFeatureSet(obj, pattern = "^mt-")  
+  # Add number of genes per UMI for each cell to metadata
+  obj$log10GenesPerUMI <- log10(obj$nFeature_RNA) / log10(obj$nCount_RNA)
+  # Add percentage of ribosomal genes
+  obj$percent.ribosomal <- PercentageFeatureSet(obj,pattern="^Rp[ls]") 
+  obj  # Return the modified object
+}) %>% setNames(names(seurat_objects))  # Preserve the original names in the list
+```
+
+## QC cell Pre-Filter
+
+
+```{r}
+# Combine metadata from all Seurat objects into a single dataframe
+combined_meta <- bind_rows(
+  seurat_objects$c1@meta.data %>% mutate(library = "c1"),
+  seurat_objects$c2@meta.data %>% mutate(library = "c2"),
+  seurat_objects$ko1@meta.data %>% mutate(library = "ko1"),
+  seurat_objects$ko2@meta.data %>% mutate(library = "ko2")
+)
+
+```
+
+
+### Number of cells per sample
+
+```{r}
+# Visualize the number of cells per library
+combined_plot <- combined_meta %>%
+  ggplot(aes(x = library, fill = condition)) +
+  geom_bar() +
+  theme_classic() +
+  theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1)) +
+  theme(plot.title = element_text(hjust = 0.5, face = "bold")) +
+  ggtitle("Number of Cells per Library") +
+  xlab("Library") +
+  ylab("Number of Cells")
+
+print(combined_plot)
+
+  # Set filenames with suffix
+  filename <- paste0(output_path, "figures/", sprintf("%03d", image_number), "_Number_of_Cells")
+  ggsave(paste0(filename, tiff_extension), combined_plot, width = 8, height = 6, units = "in")
+  ggsave(paste0(filename, pdf_extension), combined_plot, width = 8, height = 6, units = "in")
+  
+  image_number <- image_number+1
+  
+```
+
+### UMI counts (transcripts) per cell
+The UMI counts per cell (nCount_RNA) should generally be above 500, that is the low end of what we expect. If UMI counts are between 500-1000 counts, it is usable but the cells probably should have been sequenced more deeply.
+
+
+
+```{r}
+# Visualize the number UMIs/transcripts per cell
+# Visualize the number of cells per library
+combined_plot <- combined_meta %>%
+  ggplot(aes(x = nCount_RNA, color=library, fill = library)) +
+  geom_density(alpha = 0.2) + 
+  scale_x_log10() + 
+  theme_classic() +
+  ylab("UMI per cell") +
+  geom_vline(xintercept = 500) 
+
+
+print(combined_plot)
+
+  # Set filenames with suffix
+  filename <- paste0(output_path, "figures/", sprintf("%03d", image_number), "_UMI_per_cell")
+  ggsave(paste0(filename, tiff_extension), combined_plot, width = 8, height = 6, units = "in")
+  ggsave(paste0(filename, pdf_extension), combined_plot, width = 8, height = 6, units = "in")
+
+    image_number <- image_number+1
+```
+We can see that majority of our cells in both samples have 1000 UMIs or greater, which is great.
+
+
+### Genes detected per cell
+We have similar expectations for gene detection as for UMI detection, although it may be a bit lower than UMIs. For high quality data, the proportional histogram should contain a single large peak that represents cells that were encapsulated. If we see a small shoulder to the right of the major peak (not present in our data), or a bimodal distribution of the cells, that can indicate a couple of things. It might be that there are a set of cells that failed for some reason. It could also be that there are biologically different types of cells (i.e. quiescent cell populations, less complex cells of interest), and/or one type is much smaller than the other (i.e. cells with high counts may be cells that are larger in size). Therefore, this threshold should be assessed with other metrics that we describe in this lesson.
+
+```{r}
+# Visualize the distribution of genes detected per cell via histogram
+combined_plot <- combined_meta %>% 
+  	ggplot(aes(color=library, x=nFeature_RNA, fill= library)) + 
+  	geom_density(alpha = 0.2) + 
+  	theme_classic() +
+  	scale_x_log10() + 
+  	geom_vline(xintercept = 300)
+
+print(combined_plot)
+
+  # Set filenames with suffix
+  filename <- paste0(output_path, "figures/", sprintf("%03d", image_number), "_Genes_per_cell_denstity")
+  ggsave(paste0(filename, tiff_extension), combined_plot, width = 8, height = 6, units = "in")
+  ggsave(paste0(filename, pdf_extension), combined_plot, width = 8, height = 6, units = "in")
+  image_number <- image_number+1
+# Visualize the distribution of genes detected per cell via boxplot
+combined_plot <- combined_meta %>% 
+  	ggplot(aes(x=library, y=log10(nFeature_RNA), fill=library)) + 
+  	geom_boxplot() + 
+  	theme_classic() +
+  	theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust=1)) +
+  	theme(plot.title = element_text(hjust=0.5, face="bold")) +
+  	ggtitle("NCells vs NGenes")
+
+print(combined_plot)
+
+  # Set filenames with suffix
+  filename <- paste0(output_path, "figures/", sprintf("%03d", image_number), "_Genes_per_cell_boxplot")
+  ggsave(paste0(filename, tiff_extension), combined_plot, width = 8, height = 6, units = "in")
+  ggsave(paste0(filename, pdf_extension), combined_plot, width = 8, height = 6, units = "in")
+  image_number <- image_number+1
+```
+### UMIs vs. genes detected
+Two metrics that are often evaluated together are the number of UMIs and the number of genes detected per cell. Here, we have plotted the number of genes versus the numnber of UMIs coloured by the fraction of mitochondrial reads. Mitochondrial read fractions are only high (light blue color) in particularly low count cells with few detected genes. This could be indicative of damaged/dying cells whose cytoplasmic mRNA has leaked out through a broken membrane, and thus, only mRNA located in the mitochondria is still conserved. These cells are filtered out by our count and gene number thresholds. Jointly visualizing the count and gene thresholds shows the joint filtering effect.
+
+Cells that are poor quality are likely to have low genes and UMIs per cell, and correspond to the data points in the bottom left quadrant of the plot. Good cells will generally exhibit both higher number of genes per cell and higher numbers of UMIs.
+
+With this plot we also evaluate the slope of the line, and any scatter of data points in the bottom right hand quadrant of the plot. These cells have a high number of UMIs but only a few number of genes. These could be dying cells, but also could represent a population of a low complexity celltype (i.e red blood cells).
+
+```{r}
+# Visualize the correlation between genes detected and number of UMIs and determine whether strong presence of cells with low numbers of genes/UMIs
+combined_plot <- combined_meta %>% 
+  	ggplot(aes(x=nCount_RNA, y=nFeature_RNA, color=percent.mt)) + 
+  	geom_point() + 
+	scale_colour_gradient(low = "gray90", high = "black") +
+  	stat_smooth(method=lm) +
+  	scale_x_log10() + 
+  	scale_y_log10() + 
+  	theme_classic() +
+  	geom_vline(xintercept = 500) +
+  	geom_hline(yintercept = 250) +
+  	facet_wrap(~library)
+
+
+print(combined_plot)
+
+  # Set filenames with suffix
+  filename <- paste0(output_path, "figures/", sprintf("%03d", image_number), "_Genes_vs_Cell")
+  ggsave(paste0(filename, tiff_extension), combined_plot, width = 8, height = 6, units = "in")
+  ggsave(paste0(filename, pdf_extension), combined_plot, width = 8, height = 6, units = "in")
+  image_number <- image_number+1
+```
+
+### Mitochondrial counts ratio
+This metric can identify whether there is a large amount of mitochondrial contamination from dead or dying cells. We define poor quality samples for mitochondrial counts as cells which surpass the 0.2 mitochondrial ratio mark, unless of course you are expecting this in your sample.
+
+
+```{r}
+# Visualize the distribution of mitochondrial gene expression detected per cell
+combined_plot <- combined_meta %>% 
+  	ggplot(aes(color=library, x=percent.mt, fill=library)) + 
+  	geom_density(alpha = 0.2) + 
+  	scale_x_log10() + 
+  	theme_classic() +
+  	geom_vline(xintercept = 1) #Threshold of 1% of mitochondrial genes
+
+print(combined_plot)
+
+  # Set filenames with suffix
+  filename <- paste0(output_path, "figures/", sprintf("%03d", image_number), "_Density_MitoGenes_Cell")
+  ggsave(paste0(filename, tiff_extension), combined_plot, width = 8, height = 6, units = "in")
+  ggsave(paste0(filename, pdf_extension), combined_plot, width = 8, height = 6, units = "in")
+  image_number <- image_number+1
+
+```
+  	
+###	Complexity
+We can see the samples where we sequenced each cell less have a higher overall complexity, that is because we have not started saturating the sequencing for any given gene for these samples. Outlier cells in these samples might be cells that have a less complex RNA species than other cells. Sometimes we can detect contamination with low complexity cell types like red blood cells via this metric. Generally, we expect the novelty score to be above 0.80.
+
+```{r}
+# Visualize the overall complexity of the gene expression by visualizing the genes detected per UMI
+combined_plot <- combined_meta %>%
+  	ggplot(aes(x=log10GenesPerUMI, color = library, fill=library)) +
+  	geom_density(alpha = 0.2) +
+  	theme_classic() +
+  	geom_vline(xintercept = 0.8)
+
+print(combined_plot)
+  # Set filenames with suffix
+  filename <- paste0(output_path, "figures/", sprintf("%03d", image_number), "_Complexity")
+  ggsave(paste0(filename, tiff_extension), combined_plot, width = 8, height = 6, units = "in")
+  ggsave(paste0(filename, pdf_extension), combined_plot, width = 8, height = 6, units = "in")
+  image_number <- image_number+1
+
+```
+
+  	
+### Percentage of mitochondrial genes
+
+```{r}
+source("code/01_sc_functions.R")
+# Load the function from the R script
+#source("01_qc_functions.R")
+
+# Generate QC plots for objects in the list
+lapply(names(seurat_objects), function(name) {
+  obj <- seurat_objects[[name]]  # Access the object from the list
+  image_number <<- generate_qc_plots(obj, name, image_number, output_path, suffix = "prefilter")
+})
+```
+
+
+## QC cell Filter
+We filter cells that have unique feature counts over 7,500 or less than 850
+We filter cells that have >1% mitochondrial counts
+
+```{r}
+
+# Filter Seurat objects based on QC metrics
+seurat_objects <- lapply(names(seurat_objects), function(name) {
+  obj <- seurat_objects[[name]]  # Access the object from the list
+  obj <- subset(obj, subset = nFeature_RNA > 850 & nFeature_RNA < 7500 & percent.mt < 1)  # Apply QC filters
+  obj  # Return the filtered object
+}) %>% setNames(names(seurat_objects))  # Preserve the original names in the list
+
+```
+
+
+
+
+
+
+```{r}
+# Combine metadata from all Seurat objects into a single dataframe
+combined_meta_filter <- bind_rows(
+  seurat_objects$c1@meta.data %>% mutate(library = "c1"),
+  seurat_objects$c2@meta.data %>% mutate(library = "c2"),
+  seurat_objects$ko1@meta.data %>% mutate(library = "ko1"),
+  seurat_objects$ko2@meta.data %>% mutate(library = "ko2")
+)
+
+```
+
+
+### Number of cells per sample
+
+```{r}
+# Visualize the number of cells per library
+combined_plot <- combined_meta_filter %>%
+  ggplot(aes(x = library, fill = condition)) +
+  geom_bar() +
+  theme_classic() +
+  theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1)) +
+  theme(plot.title = element_text(hjust = 0.5, face = "bold")) +
+  ggtitle("Number of Cells per Library") +
+  xlab("Library") +
+  ylab("Number of Cells")
+
+print(combined_plot)
+
+  # Set filenames with suffix
+  filename <- paste0(output_path, "figures/", sprintf("%03d", image_number), "_Number_of_Cells_filter")
+  ggsave(paste0(filename, tiff_extension), combined_plot, width = 8, height = 6, units = "in")
+  ggsave(paste0(filename, pdf_extension), combined_plot, width = 8, height = 6, units = "in")
+  
+  image_number <- image_number+1
+  
+```
+
+### UMI counts (transcripts) per cell
+The UMI counts per cell (nCount_RNA) should generally be above 500, that is the low end of what we expect. If UMI counts are between 500-1000 counts, it is usable but the cells probably should have been sequenced more deeply.
+
+
+
+```{r}
+# Visualize the number UMIs/transcripts per cell
+# Visualize the number of cells per library
+combined_plot <- combined_meta_filter %>%
+  ggplot(aes(x = nCount_RNA, color=library, fill = library)) +
+  geom_density(alpha = 0.2) + 
+  scale_x_log10() + 
+  theme_classic() +
+  ylab("UMI per cell") +
+  geom_vline(xintercept = 500) 
+
+
+print(combined_plot)
+
+  # Set filenames with suffix
+  filename <- paste0(output_path, "figures/", sprintf("%03d", image_number), "_UMI_per_cell_filter")
+  ggsave(paste0(filename, tiff_extension), combined_plot, width = 8, height = 6, units = "in")
+  ggsave(paste0(filename, pdf_extension), combined_plot, width = 8, height = 6, units = "in")
+
+    image_number <- image_number+1
+```
+We can see that majority of our cells in both samples have 1000 UMIs or greater, which is great.
+
+
+### Genes detected per cell
+We have similar expectations for gene detection as for UMI detection, although it may be a bit lower than UMIs. For high quality data, the proportional histogram should contain a single large peak that represents cells that were encapsulated. If we see a small shoulder to the right of the major peak (not present in our data), or a bimodal distribution of the cells, that can indicate a couple of things. It might be that there are a set of cells that failed for some reason. It could also be that there are biologically different types of cells (i.e. quiescent cell populations, less complex cells of interest), and/or one type is much smaller than the other (i.e. cells with high counts may be cells that are larger in size). Therefore, this threshold should be assessed with other metrics that we describe in this lesson.
+
+```{r}
+# Visualize the distribution of genes detected per cell via histogram
+combined_plot <- combined_meta_filter %>% 
+  	ggplot(aes(color=library, x=nFeature_RNA, fill= library)) + 
+  	geom_density(alpha = 0.2) + 
+  	theme_classic() +
+  	scale_x_log10() + 
+  	geom_vline(xintercept = 300)
+
+print(combined_plot)
+
+  # Set filenames with suffix
+  filename <- paste0(output_path, "figures/", sprintf("%03d", image_number), "_Genes_per_cell_denstity_filter")
+  ggsave(paste0(filename, tiff_extension), combined_plot, width = 8, height = 6, units = "in")
+  ggsave(paste0(filename, pdf_extension), combined_plot, width = 8, height = 6, units = "in")
+  image_number <- image_number+1
+# Visualize the distribution of genes detected per cell via boxplot
+combined_plot <- combined_meta_filter %>% 
+  	ggplot(aes(x=library, y=log10(nFeature_RNA), fill=library)) + 
+  	geom_boxplot() + 
+  	theme_classic() +
+  	theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust=1)) +
+  	theme(plot.title = element_text(hjust=0.5, face="bold")) +
+  	ggtitle("NCells vs NGenes")
+
+print(combined_plot)
+
+  # Set filenames with suffix
+  filename <- paste0(output_path, "figures/", sprintf("%03d", image_number), "_Genes_per_cell_boxplot_filter")
+  ggsave(paste0(filename, tiff_extension), combined_plot, width = 8, height = 6, units = "in")
+  ggsave(paste0(filename, pdf_extension), combined_plot, width = 8, height = 6, units = "in")
+  image_number <- image_number+1
+```
+### UMIs vs. genes detected
+Two metrics that are often evaluated together are the number of UMIs and the number of genes detected per cell. Here, we have plotted the number of genes versus the numnber of UMIs coloured by the fraction of mitochondrial reads. Mitochondrial read fractions are only high (light blue color) in particularly low count cells with few detected genes. This could be indicative of damaged/dying cells whose cytoplasmic mRNA has leaked out through a broken membrane, and thus, only mRNA located in the mitochondria is still conserved. These cells are filtered out by our count and gene number thresholds. Jointly visualizing the count and gene thresholds shows the joint filtering effect.
+
+Cells that are poor quality are likely to have low genes and UMIs per cell, and correspond to the data points in the bottom left quadrant of the plot. Good cells will generally exhibit both higher number of genes per cell and higher numbers of UMIs.
+
+With this plot we also evaluate the slope of the line, and any scatter of data points in the bottom right hand quadrant of the plot. These cells have a high number of UMIs but only a few number of genes. These could be dying cells, but also could represent a population of a low complexity celltype (i.e red blood cells).
+
+```{r}
+# Visualize the correlation between genes detected and number of UMIs and determine whether strong presence of cells with low numbers of genes/UMIs
+combined_plot <- combined_meta_filter %>% 
+  	ggplot(aes(x=nCount_RNA, y=nFeature_RNA, color=percent.mt)) + 
+  	geom_point() + 
+	scale_colour_gradient(low = "gray90", high = "black") +
+  	stat_smooth(method=lm) +
+  	scale_x_log10() + 
+  	scale_y_log10() + 
+  	theme_classic() +
+  	geom_vline(xintercept = 500) +
+  	geom_hline(yintercept = 250) +
+  	facet_wrap(~library)
+
+
+print(combined_plot)
+
+  # Set filenames with suffix
+  filename <- paste0(output_path, "figures/", sprintf("%03d", image_number), "_Genes_vs_Cell_filter")
+  ggsave(paste0(filename, tiff_extension), combined_plot, width = 8, height = 6, units = "in")
+  ggsave(paste0(filename, pdf_extension), combined_plot, width = 8, height = 6, units = "in")
+  image_number <- image_number+1
+```
+
+
+  	
+###	Complexity
+We can see the samples where we sequenced each cell less have a higher overall complexity, that is because we have not started saturating the sequencing for any given gene for these samples. Outlier cells in these samples might be cells that have a less complex RNA species than other cells. Sometimes we can detect contamination with low complexity cell types like red blood cells via this metric. Generally, we expect the novelty score to be above 0.80.
+
+```{r}
+# Visualize the overall complexity of the gene expression by visualizing the genes detected per UMI
+combined_plot <- combined_meta_filter %>%
+  	ggplot(aes(x=log10GenesPerUMI, color = library, fill=library)) +
+  	geom_density(alpha = 0.2) +
+  	theme_classic() +
+  	geom_vline(xintercept = 0.8)
+
+print(combined_plot)
+  # Set filenames with suffix
+  filename <- paste0(output_path, "figures/", sprintf("%03d", image_number), "_Complexity_filter")
+  ggsave(paste0(filename, tiff_extension), combined_plot, width = 8, height = 6, units = "in")
+  ggsave(paste0(filename, pdf_extension), combined_plot, width = 8, height = 6, units = "in")
+  image_number <- image_number+1
+
+```
+### Mitochondrial counts ratio
+This metric can identify whether there is a large amount of mitochondrial contamination from dead or dying cells. We define poor quality samples for mitochondrial counts as cells which surpass the 0.2 mitochondrial ratio mark, unless of course you are expecting this in your sample.
+
+
+```{r}
+# Visualize the distribution of mitochondrial gene expression detected per cell
+combined_plot <- combined_meta_filter %>% 
+  	ggplot(aes(color=library, x=percent.mt, fill=library)) + 
+  	geom_density(alpha = 0.2) + 
+  	scale_x_log10() + 
+  	theme_classic() +
+  	geom_vline(xintercept = 1) #Threshold of 1% of mitochondrial genes
+
+print(combined_plot)
+
+  # Set filenames with suffix
+  filename <- paste0(output_path, "figures/", sprintf("%03d", image_number), "_Density_MitoGenes_Cell_filter")
+  ggsave(paste0(filename, tiff_extension), combined_plot, width = 8, height = 6, units = "in")
+  ggsave(paste0(filename, pdf_extension), combined_plot, width = 8, height = 6, units = "in")
+  image_number <- image_number+1
+
+```
+  	
+  	
+### Percentage of mitochondrial genes
+
+```{r}
+# Generate QC plots for objects in the list
+lapply(names(seurat_objects), function(name) {
+  obj <- seurat_objects[[name]]  # Access the object from the list
+  image_number <<- generate_qc_plots(obj, name, image_number, output_path, suffix = "filter")
+})
+```
+
+# 3.Normalizing the data
+
+```{r}
+  # Plan for parallelization (adjust workers based on machine resources)
+  plan(multicore, workers = 4)  # Adjust based on your system
+  options(future.globals.maxSize = 8 * 1024^3) #(Gb)
+  seurat_names <- names(seurat_objects)
+# Process Seurat objects
+norm_seurat_objects <- normalize_seurat_objects(seurat_objects = seurat_objects)
+
+
+```
+
+
+```{r}
+tic()
+# Export results ####
+  save(norm_seurat_objects, file = paste0(output_path, "RData/", "Norm_seurat_objects", ".RData"))  # Save using the name
+toc()
+```
+## Highly Variable genes plot
+```{r}
+# Generate HV plots for objects in the list
+lapply(names(norm_seurat_objects), function(name) {
+  obj <- norm_seurat_objects[[name]]  # Access the object from the list
+  image_number <<- generate_HV_plots(obj, name, image_number, output_path)
+})
+
+```
+# 4.Linear dimensional reduction
+Next we perform PCA on the scaled data. By default, only the previously determined variable features are used as input, but can be defined using features argument if you wish to choose a different subset (if you do want to use a custom subset of features, make sure you pass these to ScaleData first).
+
+For the first principal components, Seurat outputs a list of genes with the most positive and negative loadings, representing modules of genes that exhibit either correlation (or anti-correlation) across single-cells in the dataset.
+
+```{r}
+
+
+norm_seurat_objects <- add_pca(
+  norm_seurat_objects = norm_seurat_objects,
+  output_path = output_path,
+  image_number = image_number
+)
+
+```
+
+## Elbow Plot
+Determine the ‘dimensionality’ of the dataset
+To overcome the extensive technical noise in any single feature for scRNA-seq data, Seurat clusters cells based on their PCA scores, with each PC essentially representing a ‘metafeature’ that combines information across a correlated feature set. The top principal components therefore represent a robust compression of the dataset. However, how many components should we choose to include? 10? 20? 100?
+
+In Macosko et al, we implemented a resampling test inspired by the JackStraw procedure. While still available in Seurat (see previous vignette), this is a slow and computationally expensive procedure, and we is no longer routinely used in single cell analysis.
+
+An alternative heuristic method generates an ‘Elbow plot’: a ranking of principle components based on the percentage of variance explained by each one (ElbowPlot() function). In this example, we can observe an ‘elbow’ around PC9-10, suggesting that the majority of true signal is captured in the first 10 PCs.
+
+```{r}
+
+elbow_plots(
+  seurat_objects = norm_seurat_objects,
+  output_path = output_path,
+  image_number = image_number
+)
+
+
+```
+
+## Saving Results
+```{r}
+tic()
+# Export results ####
+  save(norm_seurat_objects, file = paste0(output_path, "RData/", "Norm_seurat_objects", ".RData"))  # Save using the name
+toc()
+```
+### Load RDatas
+```{r}
+tic()
+# Load results ####
+load(paste0(output_path,"RData/Norm_seurat_objects.RData"))
+toc()
+
+
+```
+
+
+## Cluster cells
+Seurat applies a graph-based clustering approach, building upon initial strategies in (Macosko et al). Importantly, the distance metric which drives the clustering analysis (based on previously identified PCs) remains the same. However, our approach to partitioning the cellular distance matrix into clusters has dramatically improved. Our approach was heavily inspired by recent manuscripts which applied graph-based clustering approaches to scRNA-seq data [SNN-Cliq, Xu and Su, Bioinformatics, 2015] and CyTOF data [PhenoGraph, Levine et al., Cell, 2015]. Briefly, these methods embed cells in a graph structure - for example a K-nearest neighbor (KNN) graph, with edges drawn between cells with similar feature expression patterns, and then attempt to partition this graph into highly interconnected ‘quasi-cliques’ or ‘communities’.
+
+As in PhenoGraph, we first construct a KNN graph based on the euclidean distance in PCA space, and refine the edge weights between any two cells based on the shared overlap in their local neighborhoods (Jaccard similarity). This step is performed using the FindNeighbors() function, and takes as input the previously defined dimensionality of the dataset (first 11 PCs).
+
+To cluster the cells, we next apply modularity optimization techniques such as the Louvain algorithm (default) or SLM [SLM, Blondel et al., Journal of Statistical Mechanics], to iteratively group cells together, with the goal of optimizing the standard modularity function. The FindClusters() function implements this procedure, and contains a resolution parameter that sets the ‘granularity’ of the downstream clustering, with increased values leading to a greater number of clusters. We find that setting this parameter between 0.4-1.2 typically returns good results for single-cell datasets of around 3K cells. Optimal resolution often increases for larger datasets. The clusters can be found using the Idents() function.
+
+```{r}
+
+  plan(multicore, workers = 4)  # Adjust based on your system
+  options(future.globals.maxSize = 24 * 1024^3) #(Gb)
+  gc()
+seurat_names <- names(norm_seurat_objects)
+# Perform clustering and UMAP on Seurat objects
+clustered_seurat_objects <- cluster_and_umap(
+  seurat_objects = norm_seurat_objects,  # Output from the PCA step
+  output_path = output_path,
+  image_number = image_number,
+  dims = 1:10,  # Customize dimensions if needed
+  resolution = 0.8,  # Customize resolution if needed
+  components = 2L
+  )
+```
+
+
+```{r}
+#Save Normalized and dimentionally reduced data
+tic()
+# Export results ####
+# Save using the name
+  save(clustered_seurat_objects, file = paste0(output_path, "RData/", "clustered_seurat_objects", ".RData"))  
+
+### Load RDatas
+
+# Load results ####
+load(paste0(output_path,"RData/clustered_seurat_objects.RData"))
+toc()
+
+rm(norm_seurat_objects, seurat_objects, combined_meta, combined_meta_filter, combined_plot)
+gc()
+```
+
+
+# 4. Library integration
+
+```{r}
+tic()
+# Plan for parallelization (adjust workers based on machine resources)
+  plan(multicore, workers = 4)  # Adjust based on your system
+  options(future.globals.maxSize = 16 * 1024^3) #(Gb)
+  gc()
+  
+# Integrate data and perform clustering/UMAP in parallel
+data_int <- integrate_and_cluster_parallel(
+  seurat_objects = clustered_seurat_objects,
+  seurat_names = seurat_names,
+  output_path = output_path,
+  image_number = image_number)
+
+toc()
+```
+## Save data_int object
+
+```{r}
+#Save Normalized and dimentionally reduced data
+tic()
+# Export results ####
+# Save using the name
+  save(data_int, file = paste0(output_path, "RData/", "data_int", ".RData"))  
+
+### Load RDatas
+
+# Load results ####
+load(paste0(output_path,"RData/data_int.RData"))
+toc()
+
+rm(clustered_seurat_objects)
+gc()
+```
+
+
+# 5.Plot UMAP & UMAP Features
+
+```{r}
+tic()
+ # note that you can set `label = TRUE` or use the LabelClusters function to help label individual clusters
+  plot <- DimPlot(data_int, reduction = "umap", label = TRUE)
+
+  print(plot)
+  # Set filename with incremented figure number
+  filename <- paste0(output_path, "figures/", sprintf("%03d", image_number), "_UMAP")
+  # Save in TIFF and PDF formats
+  ggsave(paste0(filename, tiff_extension), plot, width = 8, height = 6, units = "in")
+  ggsave(paste0(filename, pdf_extension), plot, width = 8, height = 6, units = "in")
+  # Increment the figure counter
+  image_number <<- image_number + 1  # Use <<- to update the external variable
+    
+
+
+    plot <- DimPlot(data_int, reduction = "umap", split.by="condition", ncol = 2, label = TRUE)
+  
+  print(plot)
+  # Set filename with incremented figure number
+  filename <- paste0(output_path, "figures/", sprintf("%03d", image_number), "_UMAP_ident")
+  # Save in TIFF and PDF formats
+  ggsave(paste0(filename, tiff_extension), plot, width = 8, height = 6, units = "in")
+  ggsave(paste0(filename, pdf_extension), plot, width = 8, height = 6, units = "in")
+  # Increment the figure counter
+  image_number <<- image_number + 1  # Use <<- to update the external variable
+  
+  
+  #UMAP by features
+  features <- c("nFeature_RNA", "nCount_RNA")
+  feature_plot <- FeaturePlot(data_int, features = features)
+    print(feature_plot)
+  # Set filename with incremented figure number
+  filename <- paste0(output_path, "figures/", sprintf("%03d", image_number), "_Feature_plot")
+  # Save in TIFF and PDF formats
+  ggsave(paste0(filename, tiff_extension), feature_plot, width = 8, height = 6, units = "in")
+  ggsave(paste0(filename, pdf_extension), feature_plot, width = 8, height = 6, units = "in")
+  # Increment the figure counter
+  image_number <<- image_number + 1  # Use <<- to update the external variable
+toc()
+
+```
+
+## UMAP HVGs
+
+```{r}
+top <-head(VariableFeatures(data_int),10)
+
+  #UMAP by features
+  feature_plot <- FeaturePlot(data_int, features = top, ncol = 5)
+    print(feature_plot)
+  # Set filename with incremented figure number
+  filename <- paste0(output_path, "figures/", sprintf("%03d", image_number), "_Feature_plot")
+  # Save in TIFF and PDF formats
+  ggsave(paste0(filename, tiff_extension), feature_plot, width = 12, height = 6, units = "in")
+  ggsave(paste0(filename, pdf_extension), feature_plot, width = 12, height = 6, units = "in")
+  # Increment the figure counter
+  image_number <<- image_number + 1  # Use <<- to update the external variable
+  
+```
+
+## UMAP Dnajc5
+
+```{r}
+  #UMAP by features
+  feature_plot <- FeaturePlot(data_int, features = "Dnajc5",split.by="condition", ncol = 2 )
+    print(feature_plot)
+  # Set filename with incremented figure number
+  filename <- paste0(output_path, "figures/", sprintf("%03d", image_number), "_Feature_plot")
+  # Save in TIFF and PDF formats
+  ggsave(paste0(filename, tiff_extension), feature_plot, width = 12, height = 6, units = "in")
+  ggsave(paste0(filename, pdf_extension), feature_plot, width = 12, height = 6, units = "in")
+  # Increment the figure counter
+  image_number <<- image_number + 1  # Use <<- to update the external variable
+  
+```
+
+
+
+# 6. Finding differentially expressed features (cluster biomarkers)
+Seurat can help you find markers that define clusters via differential
+expression (DE). By default, it identifies positive and negative markers
+of a single cluster (specified in ident.1), compared to all other cells.
+FindAllMarkers() automates this process for all clusters, but you can
+also test groups of clusters vs. each other, or against all cells.
+
+In Seurat v5, we use the presto package (as described here and available
+for installation here), to dramatically improve the speed of DE
+analysis, particularly for large datasets. For users who are not using
+presto, you can examine the documentation for this function
+(?FindMarkers) to explore the min.pct and logfc.threshold parameters,
+which can be increased in order to increase the speed of DE testing.
+```{r}
+# Ensure default assay is set to 'integrated'
+DefaultAssay(data_int) <- "integrated"
+
+Idents(data_int) <- "seurat_clusters"
+
+# Crear una lista para guardar los resultados
+cluster_list <- list()
+
+# Iterar sobre los clústeres
+for (cluster in unique(Idents(data_int))) {
+  # Filtrar por clúster
+  cells_in_cluster <- WhichCells(data_int, idents = cluster)
+  
+  # Subconjunto de células del clúster actual
+  cluster_subset <- subset(data_int, cells = cells_in_cluster)
+  
+  # Cambiar las identidades al factor "condition"
+  Idents(cluster_subset) <- "condition"
+  
+  # Realizar análisis diferencial entre KO y WT
+  markers <- FindMarkers(cluster_subset, 
+                         ident.1 = "KO", 
+                         ident.2 = "WT",
+                         test.use = "wilcox_limma", # Cambia si prefieres otro test
+                         logfc.threshold = 0.25, 
+                         min.pct = 0.1)
+  
+  # Guardar resultados
+  cluster_list[[paste0("Cluster_", cluster)]] <- markers
+}
+
+```
+
+
+
+
+```{r}
+# Convertir la lista en un data.frame con una columna adicional 'cluster' (valor numérico)
+cluster_markers_df <- do.call(rbind, lapply(names(cluster_list), function(cluster) {
+  # Extraer el dataframe del cluster actual y añadir una columna con el número del cluster
+  markers <- cluster_list[[cluster]]
+  markers$cluster <- as.numeric(gsub("Cluster_", "", cluster)) # Eliminar el prefijo y convertir a numérico
+  return(markers)
+}))
+# Convertir las filas (rownames) en una columna llamada 'gene'
+cluster_markers_df$gene <- rownames(cluster_markers_df)
+
+# Reiniciar los nombres de las filas
+rownames(cluster_markers_df) <- NULL
+
+
+cluster_markers_df <- cluster_markers_df %>% 
+  dplyr::select(gene, everything())
+
+# Ver el resultado
+head(cluster_markers_df)
+
+
+```
+
+
+
+
+```{r}
+
+
+VolcanoEnhanced <- EnhancedVolcano::EnhancedVolcano(cluster_markers_df,
+                                  lab = cluster_markers_df$gene,
+                                  x = 'avg_log2FC',
+                                  y = 'p_val_adj',
+                                  title = 'WT vs KO Differential Genes',
+                                  pCutoff = 1e-16)
+
+
+
+```
+
+
+```{r}
+#Generate a list 
+
+cluster_list %>% 
+write_xlsx(paste0(output_path,"tables/","cluster_list.xlsx"))
+```
+
+## HeatMap
+
+```{r}
+cluster_markers_df %>%
+    group_by(cluster) %>%
+    dplyr::filter(avg_log2FC > FC) %>%
+    slice_head(n = 10) %>%
+    ungroup() -> top10
+
+
+plot <- DoHeatmap(data_int, features = top10$gene) 
+print(plot)
+  # Set filename with incremented figure number
+  filename <- paste0(output_path, "figures/", sprintf("%03d", image_number), "_HeatMap_cluster_plot")
+  # Save in TIFF and PDF formats
+  ggsave(paste0(filename, tiff_extension), plot, width = 12, height = 6, units = "in")
+  ggsave(paste0(filename, pdf_extension), plot, width = 12, height = 6, units = "in")
+  # Increment the figure counter
+  image_number <<- image_number + 1  # Use <<- to update the external variable
+```
+
+
+# 8. Saving
+
+
+```{r}
+#Save Normalized and dimentionally reduced data
+tic()
+# Export results ####
+# Save using the name
+  save(data_int, file = paste0(output_path, "RData/", "data_int", ".RData"))  
+
+### Load RDatas
+
+# Load results ####
+load(paste0(output_path,"RData/data_int.RData"))
+toc()
+
+gc()
+```
+
+# 7. Clustering association
+
+1.  Use 'SingleR' is a widely used tool that compares gene expression
+    profiles of your clusters to predefined reference databases. Load an
+    appropriate reference database. For example:
+
+-   MouseRNAseqData: Reference for murine tissues.
+-   ImmGenData: Immunological reference.
+-   HumanPrimaryCellAtlasData: For human cells.
+
+2.  Use scType for fast annotation 'scType' is a simpler, more
+    customizable tool that uses user-defined or database-available
+    marker lists.
+
+    Comparison between 'SingleR' and 'scType'
+    
+    | Feature           | SingleR                         | scType            |
+    |-------------------|---------------------------------|-------------------|
+    | **Ease of use**   | More robust but more technical  | Simpler           |
+    | **Database**      | Use predefined references       | Use marker lists  |
+    | **Customization** | Limited                         | Very customizable |
+    | **Speed**         | Moderate                        | Very fast         |
+
+    : Recommendation If you have a well-characterized dataset (such as
+    mouse brain transcriptomics), use SingleR with a database such as
+    MouseRNAseqData. If you prefer greater flexibility or speed, try
+    scType with specific marker lists.
+
+
+## Allen Brain Atlas clustering
+Download matrix Gene expression matrix and Table cell metadata from Allen Brain Atlas Cell Types Database: RNA-Seq Data (https://portal.brain-map.org/atlases-and-data/rnaseq)
+Whole Cortex & Hippocampus - 10x genomics (2020)
+with 10x-SMART-seq taxonomy (2021)
+```{r}
+
+# Extraer la matriz de expresión y las identidades de los clusters
+cluster.markers <- GetAssayData(data_int, slot = "data")
+cluster.ids <- Idents(data_int)
+
+# Cargar los archivos CSV
+median_data <- fread("rawdata/medians.csv")
+trimmed_means_data <- fread("rawdata/trimmed_means.csv")
+
+# Verificar las primeras filas
+head(median_data)
+head(trimmed_means_data)
+
+# Revisar dimensiones
+dim(median_data)
+dim(trimmed_means_data)
+
+# Convertir a matriz
+median_matrix <- as.matrix(median_data[ , -1, with = FALSE])  # Asumiendo que la primera columna son los nombres de genes
+rownames(median_matrix) <- median_data[[1]]  # Asignar nombres de genes a las filas
+
+trimmed_means_matrix <- as.matrix(trimmed_means_data[ , -1, with = FALSE])  # Similar al anterior
+rownames(trimmed_means_matrix) <- trimmed_means_data[[1]]
+
+# Crear referencia de SingleR
+# Crear un nuevo objeto SummarizedExperiment con logcounts
+reference_median <- SummarizedExperiment(
+    assays = list(logcounts = log1p(median_matrix)), # Aplicar log-transformation
+    rowData = DataFrame(gene = rownames(median_matrix)),
+    colData = DataFrame(label.main = colnames(median_matrix))
+)
+# Revisar las etiquetas
+colData(reference_median)
+
+# Confirmar que `label.main` contiene los nombres de los tipos celulares
+reference_median$label.main <- colnames(median_matrix)
+
+reference_trimmed <- SummarizedExperiment(
+    assays = list(logcounts = log1p(trimmed_means_matrix)), # Aplicar log-transformation
+    rowData = DataFrame(gene = rownames(trimmed_means_matrix)),
+    colData = DataFrame(label.main = colnames(trimmed_means_matrix))
+)
+# Revisar las etiquetas
+colData(reference_trimmed)
+
+# Confirmar que `label.main` contiene los nombres de los tipos celulares
+reference_trimmed$label.main <- colnames(trimmed_means_matrix)
+```
+
+```{r}
+# Comparar con la base de datos de referencia
+annotations_median <- SingleR(test = cluster.markers, 
+                       ref = reference_median, 
+                       labels = reference_median$label.main,
+                       clusters = cluster.ids)
+
+
+# Revisar resultados
+head(annotations_median)
+
+
+```
+
+
+```{r}
+# Comparar con la base de datos de referencia
+annotations_trimmed <- SingleR(test = cluster.markers, 
+                       ref = reference_trimmed, 
+                       labels = reference_trimmed$label.main,
+                       clusters = cluster.ids)
+
+
+# Revisar resultados
+head(annotations_trimmed)
+```
+
+
+## Plot Median
+```{r}
+new.cluster.median <- annotations_median$labels
+names(new.cluster.median) <- levels(data_int)
+data_int_median <- RenameIdents(data_int, new.cluster.median)
+```
+
+
+```{r}
+# Visualiza con las nuevas identidades
+plot <- DimPlot(data_int_median, reduction = "umap", label = TRUE, repel = TRUE)
+print(plot)
+  # Set filename with incremented figure number
+  filename <- paste0(output_path, "figures/", sprintf("%03d", image_number), "_UMAP_median_cluster_plot")
+  # Save in TIFF and PDF formats
+  ggsave(paste0(filename, tiff_extension), plot, width = 12, height = 6, units = "in")
+  ggsave(paste0(filename, pdf_extension), plot, width = 12, height = 6, units = "in")
+  # Increment the figure counter
+  image_number <<- image_number + 1  # Use <<- to update the external variable
+
+```
+
+## Plot Trimmed
+```{r}
+new.cluster.trimmed <- annotations_trimmed$labels
+names(new.cluster.trimmed) <- levels(data_int)
+data_int_trimmed <- RenameIdents(data_int, new.cluster.trimmed)
+```
+
+
+```{r}
+# Visualiza con las nuevas identidades
+plot <- DimPlot(data_int_trimmed, reduction = "umap", label = TRUE, repel = TRUE)
+print(plot)
+  # Set filename with incremented figure number
+  filename <- paste0(output_path, "figures/", sprintf("%03d", image_number), "_UMAP_trimmed_cluster_plot")
+  # Save in TIFF and PDF formats
+  ggsave(paste0(filename, tiff_extension), plot, width = 12, height = 6, units = "in")
+  ggsave(paste0(filename, pdf_extension), plot, width = 12, height = 6, units = "in")
+  # Increment the figure counter
+  image_number <<- image_number + 1  # Use <<- to update the external variable
+
+```
+
+
+## MouseRNAseqData
+```{r}
+
+
+ref <- MouseRNAseqData()  # Change according needs
+# Extraer la matriz de expresión y las identidades de los clusters
+cluster.markers <- GetAssayData(data_int, slot = "data")
+cluster.ids <- Idents(data_int)
+
+# Comparar con la base de datos de referencia
+annotations_ms <- SingleR(test = cluster.markers, 
+                       ref = ref, 
+                       labels = ref$label.main,
+                       clusters = cluster.ids)
+
+# Ver los resultados
+head(annotations_ms)
+```
+
+
+```{r}
+new.cluster.ids <- annotations_ms$labels
+names(new.cluster.ids) <- levels(data_int)
+data_int_ms <- RenameIdents(data_int, new.cluster.ids)
+```
+
+
+```{r}
+# Visualiza con las nuevas identidades
+plot <- DimPlot(data_int_ms, reduction = "umap", label = TRUE, repel = TRUE)
+print(plot)
+  # Set filename with incremented figure number
+  filename <- paste0(output_path, "figures/", sprintf("%03d", image_number), "_UMAP_simple_cluster_plot")
+  # Save in TIFF and PDF formats
+  ggsave(paste0(filename, tiff_extension), plot, width = 12, height = 6, units = "in")
+  ggsave(paste0(filename, pdf_extension), plot, width = 12, height = 6, units = "in")
+  # Increment the figure counter
+  image_number <<- image_number + 1  # Use <<- to update the external variable
+
+```
+## Save Clusters
+
+```{r}
+# Convertir las anotaciones a un data.frame para unirlas con cluster_markers_df
+annotations_median_df <- as.data.frame(annotations_median)
+annotations_median_df$cluster <- rownames(annotations_median_df)  # Añadir los IDs de los clusters como columna
+# Convertir las anotaciones a un data.frame para unirlas con cluster_markers_df
+annotations_trimmed_df <- as.data.frame(annotations_trimmed)
+annotations_trimmed_df$cluster <- rownames(annotations_trimmed_df)  # Añadir los IDs de los clusters como columna
+
+
+# Convertir las anotaciones a un data.frame para unirlas con cluster_markers_df
+annotations_ms_df <- as.data.frame(annotations_ms)
+annotations_ms_df$cluster <- rownames(annotations_ms_df)  # Añadir los IDs de los clusters como columna
+
+
+cell_types_median <- annotations_median_df$labels
+cell_types_trimmed <- annotations_trimmed_df$labels
+cell_types_ms <- annotations_ms_df$labels
+
+# Añadir columna 'labels'
+cluster_markers_df$labels_median <- cell_types_median[cluster_markers_df$cluster + 1]
+cluster_markers_df$labels_trimmed <- cell_types_trimmed[cluster_markers_df$cluster + 1]
+cluster_markers_df$labels_ms <- cell_types_ms[cluster_markers_df$cluster + 1]
+#Generate a list 
+cluster_list <- cluster_markers_df %>%
+  group_split(cluster) %>%
+  set_names(paste0("cluster_", unique(cluster_markers_df$cluster)))
+#Save xlsx
+cluster_list %>% 
+write_xlsx(paste0(output_path,"tables/","cluster_list.xlsx"))
+#Save RData
+
+# Save using the name
+save(cluster_list, file = paste0(output_path, "RData/", "cluster_list", ".RData"))
+```
+
+
+```{r}
+#Clean enviroment and memory
+# Especifica los nombres de los objetos que deseas conservar
+keep_objects <- c("cluster_list", "image_number", "output_path")
+# Elimina todos los objetos excepto los especificados
+rm(list = setdiff(ls(), keep_objects))
+gc() #Clean memory
+# Set up parameters
+set.seed(123)
+options(scipen = -1)  # Habilitar notación científica en R  
+source("code/global_variables.R")  
+### Load RDatas
+# Load results ####
+load(paste0(output_path,"RData/cluster_list.RData"))
+
+```
+
+Now, cluster_list will be used as input for the next steps.
+
+
+
+# 9. Vulcano Plots
+
+```{r}
+filtration <- 0
+source("code/02_vulcano_plots.R")
+
+```
+
+
+# 10. GO
+
+```{r}
+
+source("code/001_GO.R")
+```
+
+# 11. Strings
+```{r}
+source("code/003_strings.R")
+```
+
+# 12. GSE
+```{r}
+source("code/004_gse.R")
+```
+
+# 13. HeatMaps
+```{r}
+
+# Gene list
+gene_list <- c("Hmgcr", "Srebf2", "Apoe","Lrp1", "Lrp1b", "Abca1")
+
+source("code/06_Heatmap.R")
+```
+
+# 14. HeatMaps GO Types
+```{r}
+#source("code/07_HeatMap_GO_types.R")
+```
+
+# 15. EnrichR
+```{r}
+source("code/08_EnrichR.R")
+```
+

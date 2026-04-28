@@ -83,9 +83,19 @@ flowchart TD
 │   ├── Doublets_Finders.R             # scDblFinder doublet detection
 │   └── global_variables.R             # Thresholds & organism parameters
 │
+├── code_claude/                       # GSE194315 adaptation (PBMC CITE-seq reference)
+│   ├── global_variables_GSE194315.R   # QC thresholds, PBMC markers, hardware config
+│   ├── 00_packages_GSE194315.R        # Auto-install dependency loader
+│   ├── 01_sc_functions_GSE194315.R    # Checkpoint system + extended QC utilities
+│   └── GSE194315_PBMC_SCT_Analysis.Rmd  # Full analysis notebook for GSE194315
+│
 └── rmds/                              # R Markdown analysis notebooks
-    ├── Single_Cell_10X_Integrated_functions_SCT.Rmd  # Main analysis notebook
-    └── Clustering Association_FindAllMarkers.Rmd     # Cluster annotation
+    ├── README.md                      # Notebook guide — which .Rmd to use and when
+    ├── Single_Cell_10X_Integrated_functions_SCT - PV_Cre-chacon22.Rmd  # ⭐ Main template
+    ├── Single_Cell_10X_Integrated_functions_SCT -UBC_Cre.Rmd           # UBC-Cre template
+    ├── Clustering Association_FindAllMarkers.Rmd  # Downstream: cluster annotation
+    ├── Clustering Association.Rmd                 # Downstream: association analysis
+    └── [legacy notebooks]             # Pre-SCTransform versions — see rmds/README.md
 ```
 
 ---
@@ -153,6 +163,143 @@ source("code/04_strings.R")  # STRING PPI networks
 
 ---
 
+## Example Dataset — GSE194315
+
+The `code_claude/` scripts demonstrate full pipeline adaptation to a public reference dataset:
+
+**Study:** Immune landscape of Psoriatic Arthritis (PSA), Psoriasis (PSO) and Healthy controls via PBMC CITE-seq.
+**Reference:** Liu Y. et al. *Frontiers in Immunology* 13:835760 (2022). doi:[10.3389/fimmu.2022.835760](https://doi.org/10.3389/fimmu.2022.835760)
+**GEO accession:** [GSE194315](https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE194315)
+**Design:** 7 patients × 4 technical replicates = 28 libraries. 3 conditions: Healthy / PSA / PSO.
+**Species:** *Homo sapiens* (KEGG: `hsa`, taxonomy: 9606, annotation: `org.Hs.eg.db`)
+
+### Downloading the data
+
+```r
+# Option A — GEOquery (recommended)
+BiocManager::install("GEOquery")
+GEOquery::getGEOSuppFiles("GSE194315", baseDir = "rawdata/")
+
+# Option B — Direct download from GEO FTP
+# https://ftp.ncbi.nlm.nih.gov/geo/series/GSE194nnn/GSE194315/suppl/
+# Download: GSE194315_PBMC-01-07_processed_data_files.tar.gz
+# Decompress into rawdata/GSE194315/
+```
+
+After download, the directory structure expected by `code_claude/global_variables_GSE194315.R`:
+
+```
+rawdata/GSE194315/
+├── GSE194315_PBMC-01-07_processed_data_files/
+│   ├── PBMC-01-1.barcodes.tsv.gz
+│   ├── PBMC-01-1.features.tsv.gz
+│   ├── PBMC-01-1.matrix.mtx.gz
+│   └── ...  (28 libraries × 3 files)
+├── GSE194315_CellMetadata-AS_TotalCiteseq_*.tsv
+└── GSE194315_StudyInfo_*.xlsx
+```
+
+> Raw data is gitignored (`rawdata/` excluded). Only analysis code is versioned.
+
+---
+
+## QC Thresholds
+
+Thresholds must be tuned per tissue type. The values below are defaults for **human PBMCs** (from `code_claude/global_variables_GSE194315.R`) and serve as starting-point reference.
+
+| Metric | Parameter | Default (PBMC) | Notes |
+|---|---|---|---|
+| Min genes per cell | `QC_MIN_FEATURES` | 200 | Below this → empty droplet or low-quality cell |
+| Max genes per cell | `QC_MAX_FEATURES` | 5 000 | Above this → likely doublet |
+| Min UMI counts | `QC_MIN_COUNTS` | 500 | Below this → poor library complexity |
+| Max UMI counts | `QC_MAX_COUNTS` | 25 000 | Above this → likely doublet |
+| Max % mitochondrial | `QC_MAX_MT` | 20 % | PBMCs have cytoplasm → higher baseline than nuclei; brain snRNA-seq typically uses 1–5 % |
+| Min complexity (log10 genes/UMI) | `QC_MIN_COMPLEXITY` | 0.80 | Novelty score; low = low-complexity / stressed cells |
+| Max % ribosomal | `QC_MAX_RIBO` | 60 % | No strict lower bound; very high ribo% can indicate stressed cells |
+
+**Tissue-specific guidance:**
+
+- **Brain snRNA-seq (nuclei):** `QC_MAX_MT` 1–5 %, `QC_MAX_FEATURES` 3 000–4 000 (nuclei have fewer detectable genes than whole cells)
+- **Tumour biopsies:** higher MT tolerance (10–25 %) due to hypoxic stress
+- **Immune cells (PBMC):** standard values above apply
+
+All thresholds are centralised in `global_variables.R` (or the dataset-specific variant). Change them there — do not hardcode values in notebooks.
+
+---
+
+## Computational Requirements
+
+Benchmarked on an i7-7560U (2 physical / 4 logical cores, 16 GB RAM + 16 GB swap, Ubuntu).
+
+| Dataset size | RAM required | Approx. runtime | Notes |
+|---|---|---|---|
+| < 5 000 cells | 8 GB | 20–40 min | Standard laptop feasible |
+| 5 000 – 20 000 cells | 16 GB | 1–3 h | Swap may be used during integration |
+| 20 000 – 50 000 cells | 32 GB | 3–8 h | HPC recommended; use `plan("multisession")` |
+| > 50 000 cells | 64 GB+ | 8–24 h | HPC required; consider sketch-based methods |
+
+**Parallelisation** is controlled in `global_variables.R`:
+
+```r
+# Sequential (safe on ≤ 16 GB RAM, protects against fork overhead)
+PARALLEL_WORKERS      <- 1
+FUTURE_GLOBALS_MAX_MB <- 6000   # 6 GB global size limit for {future}
+plan("sequential")
+
+# Multi-session (use on ≥ 32 GB RAM)
+PARALLEL_WORKERS <- 4
+plan("multisession", workers = PARALLEL_WORKERS)
+```
+
+The `code_claude/01_sc_functions_GSE194315.R` implements a **checkpoint system** that saves intermediate Seurat objects to `output/RData/checkpoint_<step>.rds`. If the session crashes mid-run, restart from the last checkpoint rather than from scratch:
+
+```r
+# Restart from a specific checkpoint
+seurat_obj <- check_checkpoint("03_filtered", base = output_path)
+```
+
+---
+
+## Troubleshooting
+
+**`Error: cannot allocate vector of size X Gb`**
+
+Insufficient RAM. Options: (1) reduce `N_INTEGRATION_FEATURES` from 3000 to 1500–2000; (2) switch to `plan("sequential")`; (3) process samples in batches using `Clusters_splitted_libraries.R`; (4) use sketch-based integration (`SketchIntegration` in Seurat v5).
+
+**`Seurat v5 API errors` (e.g. `object of class Assay5 cannot be coerced`)**
+
+Seurat v5 changed the default assay class. Fix:
+```r
+seurat_obj[["RNA"]] <- as(seurat_obj[["RNA"]], "Assay")  # downgrade to v4 assay
+# or set globally:
+options(Seurat.object.assay.version = "v3")
+```
+
+**`scDblFinder: too few cells in sample X`**
+
+Doublet detection requires ≥ 200 cells per sample. For very small libraries, skip doublet detection or set a lower `dbr` (expected doublet rate):
+```r
+sce <- scDblFinder(sce, dbr = 0.05, samples = sce$library)
+```
+
+**`Harmony / RPCA integration fails`**
+
+Common cause: too few cells in one condition after QC filtering. Check cell counts per sample before integration. If a sample has < 100 cells, consider removing it from integration or using a more lenient QC threshold.
+
+**`clusterProfiler: keys not found in OrgDb`**
+
+Ensure `keyType` matches the gene identifier format in your data. For human PBMC data, use `keyType <- "SYMBOL"`. For mouse data with Ensembl IDs, use `keyType <- "ENSEMBL"`.
+
+**`renv::restore()` fails on Seurat v5**
+
+Seurat v5 has non-CRAN dependencies. If restore fails:
+```r
+remotes::install_github("satijalab/seurat", "seurat5")
+renv::restore()  # retry remaining packages
+```
+
+---
+
 ## Tech Stack
 
 | Layer | Tools |
@@ -169,6 +316,21 @@ source("code/04_strings.R")  # STRING PPI networks
 | Visualisation | ggplot2, ComplexHeatmap, patchwork |
 | Annotation | org.Mm.eg.db, biomaRt, AnnotationHub |
 | Reproducibility | renv |
+
+---
+
+## Example Output
+
+> Figures will be added here from the GSE194315 reference analysis once the pipeline run is complete. Expected outputs:
+
+| Figure | Script | Description |
+|---|---|---|
+| UMAP coloured by cell type | `01_sc_functions.R` → `generate_qc_plots()` | 2D projection with Louvain cluster labels and annotated cell types |
+| QC violin plots (before/after filtering) | `01_sc_functions.R` → `generate_qc_plots()` | nCount_RNA, nFeature_RNA, % MT per sample pre- and post-filter |
+| Dotplot of canonical marker genes | Seurat `DotPlot()` | Top markers per cluster confirming cell type annotation |
+| Volcano plot — condition vs. condition | `02_vulcano_plots.R` → `perform_vulcano()` | log2FC vs. −log10(p-value) per cluster, UP/DOWN genes labelled |
+
+Figures are saved in dual format (TIFF 300 dpi + PDF) to `output/<experiment>/figures/`.
 
 ---
 

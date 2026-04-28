@@ -1,0 +1,363 @@
+---
+title: "Clustering Association"
+author: "SLB"
+date: "2025-01-28"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# 7. Clustering association
+
+1.  Use 'SingleR' is a widely used tool that compares gene expression
+    profiles of your clusters to predefined reference databases. Load an
+    appropriate reference database. For example:
+
+-   MouseRNAseqData: Reference for murine tissues.
+-   ImmGenData: Immunological reference.
+-   HumanPrimaryCellAtlasData: For human cells.
+
+2.  Use scType for fast annotation 'scType' is a simpler, more
+    customizable tool that uses user-defined or database-available
+    marker lists.
+
+    Comparison between 'SingleR' and 'scType'
+
+    | Feature           | SingleR                        | scType            |
+    |-------------------|--------------------------------|-------------------|
+    | **Ease of use**   | More robust but more technical | Simpler           |
+    | **Database**      | Use predefined references      | Use marker lists  |
+    | **Customization** | Limited                        | Very customizable |
+    | **Speed**         | Moderate                       | Very fast         |
+
+    : Recommendation If you have a well-characterized dataset (such as
+    mouse brain transcriptomics), use SingleR with a database such as
+    MouseRNAseqData. If you prefer greater flexibility or speed, try
+    scType with specific marker lists.
+
+## Allen Brain Atlas clustering
+
+Download matrix Gene expression matrix and Table cell metadata from
+Allen Brain Atlas Cell Types Database: RNA-Seq Data
+(<https://portal.brain-map.org/atlases-and-data/rnaseq>) Whole Cortex &
+Hippocampus - 10x genomics (2020) with 10x-SMART-seq taxonomy (2021)
+
+### Medians 
+```{r}
+# Cargar los archivos CSV
+median_data <- fread("rawdata/medians.csv")
+trimmed_means_data <- fread("rawdata/trimmed_means.csv")
+
+# Verificar las primeras filas
+head(median_data)
+head(trimmed_means_data)
+
+# Revisar dimensiones
+dim(median_data)
+dim(trimmed_means_data)
+
+# Convertir a matriz
+median_matrix <- as.matrix(median_data[ , -1, with = FALSE])  # Asumiendo que la primera columna son los nombres de genes
+rownames(median_matrix) <- median_data[[1]]  # Asignar nombres de genes a las filas
+
+trimmed_means_matrix <- as.matrix(trimmed_means_data[ , -1, with = FALSE])  # Similar al anterior
+rownames(trimmed_means_matrix) <- trimmed_means_data[[1]]
+
+# Crear referencia de SingleR
+# Crear un nuevo objeto SummarizedExperiment con logcounts
+reference_median <- SummarizedExperiment(
+    assays = list(logcounts = log1p(median_matrix)), # Aplicar log-transformation
+    rowData = DataFrame(gene = rownames(median_matrix)),
+    colData = DataFrame(label.main = colnames(median_matrix))
+)
+# Revisar las etiquetas
+colData(reference_median)
+# Confirmar que `label.main` contiene los nombres de los tipos celulares
+reference_median$label.main <- colnames(median_matrix)
+
+```
+
+```{r}
+# Extraer la matriz de expresión y las identidades de los clusters
+cluster.markers <- GetAssayData(data_select, slot = "data")
+cluster.ids <- Idents(data_select)
+```
+
+```{r}
+# Comparar con la base de datos de referencia
+annotations_median <- SingleR(test = cluster.markers, 
+                       ref = reference_median, 
+                       labels = reference_median$label.main,
+                       clusters = cluster.ids)
+
+
+# Revisar resultados
+head(annotations_median)
+
+
+```
+
+#### Plot Median
+
+```{r}
+new.cluster.median <- annotations_median$labels
+names(new.cluster.median) <- levels(data_select)
+data_select_median <- RenameIdents(data_select, new.cluster.median)
+```
+
+```{r}
+# Visualiza con las nuevas identidades
+plot <- DimPlot(data_select_median, reduction = "umap", label = TRUE, repel = TRUE)
+print(plot)
+  # Set filename with incremented figure number
+  filename <- paste0(output_path, "figures/", sprintf("%03d", image_number), "_UMAP_median_cluster_plot")
+  # Save in TIFF and PDF formats
+  ggsave(paste0(filename, tiff_extension), plot, width = 12, height = 6, units = "in")
+  ggsave(paste0(filename, pdf_extension), plot, width = 12, height = 6, units = "in")
+  # Increment the figure counter
+  image_number <<- image_number + 1  # Use <<- to update the external variable
+
+```
+
+### Trimmed_Means
+```{r}
+
+reference_trimmed <- SummarizedExperiment(
+    assays = list(logcounts = log1p(trimmed_means_matrix)), # Aplicar log-transformation
+    rowData = DataFrame(gene = rownames(trimmed_means_matrix)),
+    colData = DataFrame(label.main = colnames(trimmed_means_matrix))
+)
+# Revisar las etiquetas
+colData(reference_trimmed)
+
+# Confirmar que `label.main` contiene los nombres de los tipos celulares
+reference_trimmed$label.main <- colnames(trimmed_means_matrix)
+```
+```{r}
+# Comparar con la base de datos de referencia
+annotations_trimmed <- SingleR(test = cluster.markers, 
+                       ref = reference_trimmed, 
+                       labels = reference_trimmed$label.main,
+                       clusters = cluster.ids)
+
+
+# Revisar resultados
+head(annotations_trimmed)
+```
+
+#### Plot Trimmed
+
+```{r}
+new.cluster.trimmed <- annotations_trimmed$labels
+names(new.cluster.trimmed) <- levels(data_select)
+data_select_trimmed <- RenameIdents(data_select, new.cluster.trimmed)
+```
+
+```{r}
+# Visualiza con las nuevas identidades
+plot <- DimPlot(data_select_trimmed, reduction = "umap", label = TRUE, repel = TRUE)
+print(plot)
+  # Set filename with incremented figure number
+  filename <- paste0(output_path, "figures/", sprintf("%03d", image_number), "_UMAP_trimmed_cluster_plot")
+  # Save in TIFF and PDF formats
+  ggsave(paste0(filename, tiff_extension), plot, width = 12, height = 6, units = "in")
+  ggsave(paste0(filename, pdf_extension), plot, width = 12, height = 6, units = "in")
+  # Increment the figure counter
+  image_number <<- image_number + 1  # Use <<- to update the external variable
+
+```
+
+## MouseRNAseqData
+
+```{r}
+
+
+ref <- MouseRNAseqData()  # Change according needs
+# Extraer la matriz de expresión y las identidades de los clusters
+cluster.markers <- GetAssayData(data_select, slot = "data")
+cluster.ids <- Idents(data_select)
+
+# Comparar con la base de datos de referencia
+annotations_ms <- SingleR(test = cluster.markers, 
+                       ref = ref, 
+                       labels = ref$label.fine,
+                       clusters = cluster.ids)
+
+# Ver los resultados
+head(annotations_ms)
+```
+
+```{r}
+new.cluster.ids <- annotations_ms$labels
+names(new.cluster.ids) <- levels(data_select)
+data_select_ms <- RenameIdents(data_select, new.cluster.ids)
+```
+
+```{r}
+# Visualiza con las nuevas identidades
+plot <- DimPlot(data_select_ms, reduction = "umap", label = TRUE, repel = TRUE)
+print(plot)
+  # Set filename with incremented figure number
+  filename <- paste0(output_path, "figures/", sprintf("%03d", image_number), "UMAP_simple_cluster_plot")
+  # Save in TIFF and PDF formats
+  ggsave(paste0(filename, tiff_extension), plot, width = 12, height = 6, units = "in")
+  ggsave(paste0(filename, pdf_extension), plot, width = 12, height = 6, units = "in")
+  # Increment the figure counter
+  image_number <<- image_number + 1  # Use <<- to update the external variable
+
+```
+
+## Cerebellum types
+
+Taken from supplementary material from: Kozareva, V., Martin, C.,
+Osorno, T. et al. A transcriptomic atlas of mouse cerebellar cortex
+comprehensively defines cell types. Nature 598, 214–219 (2021).
+<https://doi.org/10.1038/s41586-021-03220-z>
+
+Supplementary Table 2: Highly differentially expressed genes across all
+clusters. Genes are limited to top 500 differentially expressed genes
+per subtype. Column names represent the following: “avgExpr” is the mean
+gene expression in that subtype; “logFC” is the log fold change between
+cells within the subtype compared to remaining cells; “pval” is the
+p-value, calculated with the two-tailed Gaussian approximation of U
+statistic; “padj” is the Benjamini-Hochberg adjusted p-value; “pct_in”
+is the percent of cells in the subtype expressing the gene; “pct_out” is
+the percent of cells outside the subtype expressing the gene.
+
+```{r}
+# Leer el archivo Excel (asumiendo que la primera hoja contiene los datos)
+file_path <- "rawdata/cb_cell_types.xlsx"
+data <- read_excel(file_path)
+
+# Transformar los datos: agrupar subtipos similares y pivotar
+cerebellum_data <- data %>%
+  dplyr::select(gene, subtype, avgExpr) %>%  # Seleccionar solo las columnas necesarias
+  dplyr::mutate(subtype = str_replace(subtype, "_\\d+$", "")) %>%  # Eliminar sufijos _1, _2, etc.
+  dplyr::group_by(gene, subtype) %>%  # Agrupar por gen y subtipo
+  dplyr::summarise(avgExpr = sum(avgExpr, na.rm = TRUE), .groups = "drop") %>%  # Sumar valores de expresión
+  pivot_wider(
+    names_from = subtype,  # Usar la columna "subtype" como nombres de columnas
+    values_from = avgExpr,  # Usar los valores de la columna "avgExpr" como contenido de las celdas
+    values_fill = list(avgExpr = 0)  # Asignar 0 a los valores NA
+  )%>%
+  dplyr::mutate(Purkinje = coalesce(Purkinje_Aldoc, 0) + coalesce(Purkinje_Anti_Aldoc, 0)) %>%  # Combinar columnas Purkinje_Aldoc y Purkinje_Anti_Aldoc
+  dplyr::select(-Purkinje_Aldoc, -Purkinje_Anti_Aldoc)  # Eliminar las columnas originales
+# Verificar las primeras filas
+head(cerebellum_data)
+# Revisar dimensiones
+dim(cerebellum_data)
+
+# Convertir a matriz
+cerebellum_matrix <- as.matrix(cerebellum_data[ , -1, with = FALSE])  # Asumiendo que la primera columna son los nombres de genes
+rownames(cerebellum_matrix) <- cerebellum_data[[1]]  # Asignar nombres de genes a las filas
+
+# Crear referencia de SingleR
+# Crear un nuevo objeto SummarizedExperiment con logcounts
+reference_cerebellum <- SummarizedExperiment(
+    assays = list(logcounts = log1p(cerebellum_matrix)), # Aplicar log-transformation
+    rowData = DataFrame(gene = rownames(cerebellum_matrix)),
+    colData = DataFrame(label.main = colnames(cerebellum_matrix))
+)
+# Revisar las etiquetas
+colData(reference_cerebellum)
+
+# Confirmar que `label.main` contiene los nombres de los tipos celulares
+reference_cerebellum$label.main <- colnames(cerebellum_matrix)
+
+```
+
+```{r}
+# Comparar con la base de datos de referencia
+annotations_cerebellum <- SingleR(test = cluster.markers, 
+                       ref = reference_cerebellum, 
+                       labels = reference_cerebellum$label.main,
+                       clusters = cluster.ids)
+
+
+# Revisar resultados
+head(annotations_cerebellum)
+
+```
+
+```{r}
+new.cluster.cerebellum <- annotations_cerebellum$labels
+names(new.cluster.cerebellum) <- levels(data_select)
+data_select_cerebellum <- RenameIdents(data_select, new.cluster.cerebellum)
+```
+
+```{r}
+# Visualiza con las nuevas identidades
+plot <- DimPlot(data_select_cerebellum, reduction = "umap", label = TRUE, repel = TRUE)
+print(plot)
+  # Set filename with incremented figure number
+  filename <- paste0(output_path, "figures/", sprintf("%03d", image_number), "_UMAP_cerebellum_cluster_plot")
+  # Save in TIFF and PDF formats
+  ggsave(paste0(filename, tiff_extension), plot, width = 12, height = 6, units = "in")
+  ggsave(paste0(filename, pdf_extension), plot, width = 12, height = 6, units = "in")
+  # Increment the figure counter
+  image_number <<- image_number + 1  # Use <<- to update the external variable
+
+```
+
+## Save Clusters
+
+```{r}
+# Convertir las anotaciones a un data.frame para unirlas con cluster_markers_df
+annotations_median_df <- as.data.frame(annotations_median)
+annotations_median_df$cluster <- rownames(annotations_median_df)  # Añadir los IDs de los clusters como columna
+# Convertir las anotaciones a un data.frame para unirlas con cluster_markers_df
+annotations_trimmed_df <- as.data.frame(annotations_trimmed)
+annotations_trimmed_df$cluster <- rownames(annotations_trimmed_df)  # Añadir los IDs de los clusters como columna
+# Convertir las anotaciones a un data.frame para unirlas con cluster_markers_df
+annotations_ms_df <- as.data.frame(annotations_ms)
+annotations_ms_df$cluster <- rownames(annotations_ms_df)  # Añadir los IDs de los clusters como columna
+
+# Convertir las anotaciones a un data.frame para unirlas con cluster_markers_df
+annotations_cerebellum_df <- as.data.frame(annotations_cerebellum)
+annotations_cerebellum_df$cluster <- rownames(annotations_cerebellum_df)  # Añadir los IDs de los clusters como columna
+
+
+cell_types_median <- annotations_median_df$labels
+cell_types_trimmed <- annotations_trimmed_df$labels
+cell_types_ms <- annotations_ms_df$labels
+cell_types_cerebellum <- annotations_cerebellum_df$labels
+
+# Añadir columna 'labels'
+cluster_markers_df$labels_median <- cell_types_median[cluster_markers_df$cluster + 1]
+cluster_markers_df$labels_trimmed <- cell_types_trimmed[cluster_markers_df$cluster + 1]
+cluster_markers_df$labels_ms <- cell_types_ms[cluster_markers_df$cluster + 1]
+cluster_markers_df$labels_cerebellum <- cell_types_cerebellum[cluster_markers_df$cluster + 1]
+
+#Generate a list 
+cluster_list <- cluster_markers_df %>%
+  group_split(cluster) %>%
+  set_names(paste0("cluster_", unique(cluster_markers_df$cluster)))
+#Save xlsx
+cluster_list %>% 
+write_xlsx(paste0(output_path,"tables/","cluster_list.xlsx"))
+#Save RData
+
+# Save using the name
+save(cluster_list, file = paste0(output_path, "RData/", "cluster_list", ".RData"))
+```
+
+```{r}
+#Clean enviroment and memory
+# Especifica los nombres de los objetos que deseas conservar
+keep_objects <- c("cluster_list", "image_number", "output_path")
+# Elimina todos los objetos excepto los especificados
+rm(list = setdiff(ls(), keep_objects))
+gc() #Clean memory
+# Set up parameters
+set.seed(123)
+options(scipen = -1)  # Habilitar notación científica en R  
+source("code/global_variables.R")  
+### Load RDatas
+# Load results ####
+load(paste0(output_path,"RData/cluster_list.RData"))
+
+```
+
+Now, cluster_list will be used as input for the next steps.

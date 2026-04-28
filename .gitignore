@@ -6,9 +6,12 @@
 
 # Raw sequencing data (10X CellRanger outputs, ~70 GB)
 rawdata/
-
+code_claude/
+code/old/
 # Pipeline outputs (figures, Seurat objects, tables)
 output/
+rmds/output
+
 
 # renv package library (reconstruct from renv.lock)
 renv/
@@ -16,3 +19,4 @@ renv/
 # OS
 .DS_Store
 Thumbs.db
+.positai

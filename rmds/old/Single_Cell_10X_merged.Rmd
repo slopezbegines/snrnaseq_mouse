@@ -1,0 +1,697 @@
+---
+editor_options: 
+  markdown: 
+    wrap: 72
+---
+
+# 0. Loading Libraries
+
+## Loading functions
+
+```{r}
+output_path <- "output/SC_UbCRE/merged/"
+source("code/global_variables.R")
+```
+
+```{r}
+#source("code/00_packages.R")
+```
+
+# 1. Importing data
+
+We start by reading in the data. The Read10X() function reads in the
+output of the cellranger pipeline from 10X, returning a unique molecular
+identified (UMI) count matrix. The values in this matrix represent the
+number of molecules for each feature (i.e. gene; row) that are detected
+in each cell (column). Note that more recent versions of cellranger now
+also output using the h5 file format, which can be read in using the
+Read10X_h5() function in Seurat.
+
+```{r}
+tic()
+#import data
+# Load the PBMC dataset
+ctrl_1 <- Seurat::Read10X(data.dir = "rawdata/SC/AWGC-1_Ctrl-1_results")
+ctrl_2 <- Seurat::Read10X(data.dir = "rawdata/SC/AWGC-2_Ctrl-2_results")
+ko_1 <- Seurat::Read10X(data.dir = "rawdata/SC/AWGC-3_KOut-1_results")
+ko_2 <- Seurat::Read10X(data.dir = "rawdata/SC/AWGC-4_KOut-2_results")
+
+# Initialize the Seurat object with the raw (non-normalized data).
+ubc_c1 <- CreateSeuratObject(counts = ctrl_1, project = "WT_1", min.cells = 3, min.features = 200)
+ubc_c2 <- CreateSeuratObject(counts = ctrl_2, project = "WT_2", min.cells = 3, min.features = 200)
+ubc_ko1 <- CreateSeuratObject(counts = ko_1, project = "KO_1", min.cells = 3, min.features = 200)
+ubc_ko2 <- CreateSeuratObject(counts = ko_2, project = "KO_2", min.cells = 3, min.features = 200)
+
+
+
+# Merge all four Seurat objects into a single object
+data_merge <- merge(ubc_c1, y = c(ubc_c2, ubc_ko1, ubc_ko2), 
+                  add.cell.ids = c("wt_1", "wt_2", "ko_1", "ko_2"), 
+                  project = "UBC_experiment")
+
+
+# Join layer of the merged object
+data_merge <- JoinLayers(data_merge)
+
+toc()
+```
+
+## Saving combined data as HDF5
+
+```{r}
+tic()
+SaveH5Seurat(data_merge,
+             filename = paste0(output_path, "RData/","UBC_experiment.h5Seurat"),
+             overwrite = TRUE, 
+             verbose = TRUE)
+toc()
+```
+
+# 2. Data preprocessing for each library
+
+## QC and selecting cells for further analysis
+
+Seurat allows you to easily explore QC metrics and filter cells based on
+any user-defined criteria. A few QC metrics commonly used by the
+community include \## Identify mitochondrial genes The number of unique
+genes detected in each cell. Low-quality cells or empty droplets will
+often have very few genes Cell doublets or multiplets may exhibit an
+aberrantly high gene count Similarly, the total number of molecules
+detected within a cell (correlates strongly with unique genes) The
+percentage of reads that map to the mitochondrial genome Low-quality /
+dying cells often exhibit extensive mitochondrial contamination We
+calculate mitochondrial QC metrics with the 'PercentageFeatureSet()'
+function, which calculates the percentage of counts originating from a
+set of features We use the set of all genes starting with 'MT-' as a set
+of mitochondrial genes
+
+```{r}
+# The [[ operator can add columns to object metadata. This is a great place to stash QC stats
+  data_merge[["percent.mt"]] <- PercentageFeatureSet(data_merge, pattern = "^mt-")
+```
+
+# QC cell Pre-Filter
+
+```{r}
+# Visualize QC metrics as a violin plot
+# Initialize figure counter
+figure_counter <- 1
+
+  # Generate the violin plot for QC metrics
+  QC_VlnPlot <- VlnPlot(data_merge, features = c("nFeature_RNA", "nCount_RNA", "percent.mt", "percent.ribo"), ncol = 4)
+  
+  # Print the plot
+  print(QC_VlnPlot)
+  
+  # Set filename with incremented figure number
+  filename <- paste0(output_path, "figures/", sprintf("%03d", figure_counter), "_QC_VlnPlot_prefilter")
+  
+  # Save in TIFF and PDF formats
+  ggsave(paste0(filename, tiff_extension), QC_VlnPlot, width = 8, height = 6, units = "in")
+  ggsave(paste0(filename, pdf_extension), QC_VlnPlot, width = 8, height = 6, units = "in")
+  
+  # Increment the figure counter
+  figure_counter <<- figure_counter + 1  # Use <<- to update the external variable
+
+# `figure_counter` now holds the next available figure number for subsequent steps
+
+```
+
+```{r}
+# FeatureScatter is typically used to visualize feature-feature relationships, but can be used
+# for anything calculated by the object, i.e. columns in object metadata, PC scores etc.
+plot1 <- FeatureScatter(data_merge, feature1 = "nCount_RNA", feature2 = "percent.mt")
+plot2 <- FeatureScatter(data_merge, feature1 = "nCount_RNA", feature2 = "nFeature_RNA")
+plot <- plot1 + plot2
+
+  # Print the features plot
+  print(plot)
+  
+  # Set filename with incremented figure number
+  filename <- paste0(output_path, "figures/", sprintf("%03d", figure_counter), "_Features_Plot_prefilter")
+  
+  # Save in TIFF and PDF formats
+  ggsave(paste0(filename, tiff_extension), plot, width = 8, height = 6, units = "in")
+  ggsave(paste0(filename, pdf_extension), plot, width = 8, height = 6, units = "in")
+  
+  # Increment the figure counter
+  figure_counter <<- figure_counter + 1  # Use <<- to update the external variable
+
+```
+
+# QC Post-filtering
+
+We filter cells that have unique feature counts over 7,500 or less than
+850 We filter cells that have \>1% mitochondrial counts
+
+```{r}
+  data_merge <- subset(data_merge, subset = nFeature_RNA > 850 & nFeature_RNA < 7500 & percent.mt < 1)
+```
+
+```{r}
+# Visualize QC metrics as a violin plot
+# Initialize figure counter
+figure_counter <- 1
+
+  # Generate the violin plot for QC metrics
+  QC_VlnPlot <- VlnPlot(data_merge, features = c("nFeature_RNA", "nCount_RNA", "percent.mt", "percent.ribo"), ncol = 4)
+  
+  # Print the plot
+  print(QC_VlnPlot)
+  
+  # Set filename with incremented figure number
+  filename <- paste0(output_path, "figures/", sprintf("%03d", figure_counter), "_QC_VlnPlot_filter")
+  
+  # Save in TIFF and PDF formats
+  ggsave(paste0(filename, tiff_extension), QC_VlnPlot, width = 8, height = 6, units = "in")
+  ggsave(paste0(filename, pdf_extension), QC_VlnPlot, width = 8, height = 6, units = "in")
+  
+  # Increment the figure counter
+  figure_counter <<- figure_counter + 1  # Use <<- to update the external variable
+
+# `figure_counter` now holds the next available figure number for subsequent steps
+
+```
+
+```{r}
+# FeatureScatter is typically used to visualize feature-feature relationships, but can be used
+# for anything calculated by the object, i.e. columns in object metadata, PC scores etc.
+plot1 <- FeatureScatter(data_merge, feature1 = "nCount_RNA", feature2 = "percent.mt")
+plot2 <- FeatureScatter(data_merge, feature1 = "nCount_RNA", feature2 = "nFeature_RNA")
+plot <- plot1 + plot2
+
+  # Print the features plot
+  print(plot)
+  
+  # Set filename with incremented figure number
+  filename <- paste0(output_path, "figures/", sprintf("%03d", figure_counter), "_Features_Plot_filter")
+  
+  # Save in TIFF and PDF formats
+  ggsave(paste0(filename, tiff_extension), plot, width = 8, height = 6, units = "in")
+  ggsave(paste0(filename, pdf_extension), plot, width = 8, height = 6, units = "in")
+  
+  # Increment the figure counter
+  figure_counter <<- figure_counter + 1  # Use <<- to update the external variable
+
+```
+
+# 3.Normalizing the data
+
+```{r}
+tic()
+  
+  all.genes <- rownames(data_merge)
+  # Normalize, find variable features, and scale the data
+  data_merge <- NormalizeData(data_merge, normalization.method = "LogNormalize", scale.factor = 10000) %>%
+          FindVariableFeatures(selection.method = "vst", nfeatures = 2000) 
+  
+  # Identify the 10 most highly variable genes
+  top10 <- head(VariableFeatures(data_merge), 10)
+  # plot variable features with and without labels
+  plot <- VariableFeaturePlot(data_merge)
+  plot <- LabelPoints(plot = plot, points = top10, repel = TRUE)
+  plot
+ # Set filename with incremented figure number
+  filename <- paste0(output_path, "figures/", sprintf("%03d", figure_counter), "_Highly_Varible_Genes")
+  
+  # Save in TIFF and PDF formats
+  ggsave(paste0(filename, tiff_extension), plot, width = 8, height = 6, units = "in")
+  ggsave(paste0(filename, pdf_extension), plot, width = 8, height = 6, units = "in")
+  
+  # Increment the figure counter
+  figure_counter <<- figure_counter + 1  # Use <<- to update the external variable
+  
+  data_merge <- ScaleData(data_merge, features = all.genes)
+
+
+toc()
+```
+
+# 4.Linear dimensional reduction
+
+Next we perform PCA on the scaled data. By default, only the previously
+determined variable features are used as input, but can be defined using
+features argument if you wish to choose a different subset (if you do
+want to use a custom subset of features, make sure you pass these to
+ScaleData first).
+
+For the first principal components, Seurat outputs a list of genes with
+the most positive and negative loadings, representing modules of genes
+that exhibit either correlation (or anti-correlation) across
+single-cells in the dataset.
+
+```{r}
+tic()
+
+#Add PCA 
+
+  data_merge <- RunPCA(data_merge, features = VariableFeatures(object = data_merge))
+  
+  # Examine and visualize PCA results a few different ways
+  print(data_merge[["pca"]], dims = 1:5, nfeatures = 5)
+  
+  plot <- VizDimLoadings(data_merge, dims = 1:2, reduction = "pca")
+  print(plot)
+ # Set filename with incremented figure number
+  filename <- paste0(output_path, "figures/", sprintf("%03d", figure_counter), "_VimPCA_Loadings")
+  
+  # Save in TIFF and PDF formats
+  ggsave(paste0(filename, tiff_extension), plot, width = 8, height = 6, units = "in")
+  ggsave(paste0(filename, pdf_extension), plot, width = 8, height = 6, units = "in")
+  
+  # Increment the figure counter
+  figure_counter <<- figure_counter + 1  # Use <<- to update the external variable
+  
+toc()
+
+```
+
+## Elbow Plot
+
+Determine the ‘dimensionality’ of the dataset To overcome the extensive
+technical noise in any single feature for scRNA-seq data, Seurat
+clusters cells based on their PCA scores, with each PC essentially
+representing a ‘metafeature’ that combines information across a
+correlated feature set. The top principal components therefore represent
+a robust compression of the dataset. However, how many components should
+we choose to include? 10? 20? 100?
+
+In Macosko et al, we implemented a resampling test inspired by the
+JackStraw procedure. While still available in Seurat (see previous
+vignette), this is a slow and computationally expensive procedure, and
+we is no longer routinely used in single cell analysis.
+
+An alternative heuristic method generates an ‘Elbow plot’: a ranking of
+principle components based on the percentage of variance explained by
+each one (ElbowPlot() function). In this example, we can observe an
+‘elbow’ around PC9-10, suggesting that the majority of true signal is
+captured in the first 10 PCs.
+
+```{r}
+tic()
+
+  #ElbowPlot
+  plot <- ElbowPlot(data_merge)
+  print(plot)
+ # Set filename with incremented figure number
+  filename <- paste0(output_path, "figures/", sprintf("%03d", figure_counter), "_ElbowPlot")
+  # Save in TIFF and PDF formats
+  ggsave(paste0(filename, tiff_extension), plot, width = 8, height = 6, units = "in")
+  ggsave(paste0(filename, pdf_extension), plot, width = 8, height = 6, units = "in")
+  # Increment the figure counter
+  figure_counter <<- figure_counter + 1  # Use <<- to update the external variable
+  
+toc()
+
+
+```
+
+## Cluster cells
+
+Seurat applies a graph-based clustering approach, building upon initial
+strategies in (Macosko et al). Importantly, the distance metric which
+drives the clustering analysis (based on previously identified PCs)
+remains the same. However, our approach to partitioning the cellular
+distance matrix into clusters has dramatically improved. Our approach
+was heavily inspired by recent manuscripts which applied graph-based
+clustering approaches to scRNA-seq data [SNN-Cliq, Xu and Su,
+Bioinformatics, 2015] and CyTOF data [PhenoGraph, Levine et al., Cell,
+2015]. Briefly, these methods embed cells in a graph structure - for
+example a K-nearest neighbor (KNN) graph, with edges drawn between cells
+with similar feature expression patterns, and then attempt to partition
+this graph into highly interconnected ‘quasi-cliques’ or ‘communities’.
+
+As in PhenoGraph, we first construct a KNN graph based on the euclidean
+distance in PCA space, and refine the edge weights between any two cells
+based on the shared overlap in their local neighborhoods (Jaccard
+similarity). This step is performed using the FindNeighbors() function,
+and takes as input the previously defined dimensionality of the dataset
+(first 10 PCs).
+
+To cluster the cells, we next apply modularity optimization techniques
+such as the Louvain algorithm (default) or SLM [SLM, Blondel et al.,
+Journal of Statistical Mechanics], to iteratively group cells together,
+with the goal of optimizing the standard modularity function. The
+FindClusters() function implements this procedure, and contains a
+resolution parameter that sets the ‘granularity’ of the downstream
+clustering, with increased values leading to a greater number of
+clusters. We find that setting this parameter between 0.4-1.2 typically
+returns good results for single-cell datasets of around 3K cells.
+Optimal resolution often increases for larger datasets. The clusters can
+be found using the Idents() function.
+
+```{r}
+data_merge <- FindNeighbors(data_merge, dims = 1:11)
+data_merge <- FindClusters(data_merge, resolution = 0.5)
+```
+
+## UMAP dimensions
+
+```{r}
+tic()
+  #UMAP
+  data_merge <- RunUMAP(data_merge, dims = 1:11)
+toc()
+```
+
+## Plot UMAP & UMAP Features
+
+```{r}
+tic()
+ # note that you can set `label = TRUE` or use the LabelClusters function to help label individual clusters
+  plot <- DimPlot(data_merge, reduction = "umap", label = TRUE)
+
+  print(plot)
+  # Set filename with incremented figure number
+  filename <- paste0(output_path, "figures/", sprintf("%03d", figure_counter), "_UMAP")
+  # Save in TIFF and PDF formats
+  ggsave(paste0(filename, tiff_extension), plot, width = 8, height = 6, units = "in")
+  ggsave(paste0(filename, pdf_extension), plot, width = 8, height = 6, units = "in")
+  # Increment the figure counter
+  figure_counter <<- figure_counter + 1  # Use <<- to update the external variable
+    
+
+
+# note that you can set `label = TRUE` or use the LabelClusters function to help label individual clusters
+  plot <- DimPlot(data_merge, reduction = "umap", label = TRUE)
+  plot <- DimPlot(data_merge, reduction = "umap", split.by="orig.ident", ncol = 2)
+  
+  print(plot)
+  # Set filename with incremented figure number
+  filename <- paste0(output_path, "figures/", sprintf("%03d", figure_counter), "_UMAP_ident")
+  # Save in TIFF and PDF formats
+  ggsave(paste0(filename, tiff_extension), plot, width = 8, height = 6, units = "in")
+  ggsave(paste0(filename, pdf_extension), plot, width = 8, height = 6, units = "in")
+  # Increment the figure counter
+  figure_counter <<- figure_counter + 1  # Use <<- to update the external variable
+  
+  
+  #UMAP by features
+  features <- c("nFeature_RNA", "nCount_RNA")
+  feature_plot <- FeaturePlot(data_merge, features = features)
+    print(feature_plot)
+  # Set filename with incremented figure number
+  filename <- paste0(output_path, "figures/", sprintf("%03d", figure_counter), "_Feature_plot")
+  # Save in TIFF and PDF formats
+  ggsave(paste0(filename, tiff_extension), feature_plot, width = 8, height = 6, units = "in")
+  ggsave(paste0(filename, pdf_extension), feature_plot, width = 8, height = 6, units = "in")
+  # Increment the figure counter
+  figure_counter <<- figure_counter + 1  # Use <<- to update the external variable
+toc()
+
+```
+
+## UMAP HVGs
+
+```{r}
+top <-head(VariableFeatures(data_merge),10)
+
+  #UMAP by features
+  feature_plot <- FeaturePlot(data_merge, features = top, ncol = 5)
+    print(feature_plot)
+  # Set filename with incremented figure number
+  filename <- paste0(output_path, "figures/", sprintf("%03d", figure_counter), "_Feature_plot")
+  # Save in TIFF and PDF formats
+  ggsave(paste0(filename, tiff_extension), feature_plot, width = 12, height = 6, units = "in")
+  ggsave(paste0(filename, pdf_extension), feature_plot, width = 12, height = 6, units = "in")
+  # Increment the figure counter
+  figure_counter <<- figure_counter + 1  # Use <<- to update the external variable
+  
+```
+
+## UMAP Dnajc5
+
+```{r}
+  #UMAP by features
+  feature_plot <- FeaturePlot(data_merge, features = "Dnajc5",split.by="orig.ident", ncol = 2 )
+    print(feature_plot)
+  # Set filename with incremented figure number
+  filename <- paste0(output_path, "figures/", sprintf("%03d", figure_counter), "_Feature_plot")
+  # Save in TIFF and PDF formats
+  ggsave(paste0(filename, tiff_extension), feature_plot, width = 12, height = 6, units = "in")
+  ggsave(paste0(filename, pdf_extension), feature_plot, width = 12, height = 6, units = "in")
+  # Increment the figure counter
+  figure_counter <<- figure_counter + 1  # Use <<- to update the external variable
+  
+```
+
+```{r}
+tic()
+SaveH5Seurat(data_merge,
+             filename = paste0(output_path, "RData/","UBC_experiment.h5Seurat"),
+             overwrite = TRUE, 
+             verbose = TRUE)
+toc()
+```
+
+#5. Finding differentially expressed features (cluster biomarkers)
+Seurat can help you find markers that define clusters via differential
+expression (DE). By default, it identifies positive and negative markers
+of a single cluster (specified in ident.1), compared to all other cells.
+FindAllMarkers() automates this process for all clusters, but you can
+also test groups of clusters vs. each other, or against all cells.
+
+In Seurat v5, we use the presto package (as described here and available
+for installation here), to dramatically improve the speed of DE
+analysis, particularly for large datasets. For users who are not using
+presto, you can examine the documentation for this function
+(?FindMarkers) to explore the min.pct and logfc.threshold parameters,
+which can be increased in order to increase the speed of DE testing.
+
+```{r}
+# find markers for every cluster compared to all remaining cells, report only the positive
+# ones
+# Encuentra marcadores de todos los clusters
+cluster.markers <- FindAllMarkers(data_merge, only.pos = TRUE, min.pct = 0.25, logfc.threshold = 0.25)
+
+data_merge.markers <- FindAllMarkers(data_merge, 
+                              logfc.threshold = 0.1,
+                              min.pct = 0.1,
+                              only.pos = TRUE)
+```
+
+```{r}
+#Generate a list 
+cluster_list <- data_merge.markers %>%
+  group_split(cluster) %>%
+  set_names(paste0("cluster_", unique(data_merge.markers$cluster)))
+
+cluster_list %>% 
+write_xlsx(paste0(output_path,"tables/","cluster_list.xlsx"))
+```
+
+## HeatMap
+
+```{r}
+data_merge.markers %>%
+    group_by(cluster) %>%
+    dplyr::filter(avg_log2FC > 1) %>%
+    slice_head(n = 10) %>%
+    ungroup() -> top10
+
+
+plot <- DoHeatmap(data_merge, features = top10$gene) 
+print(plot)
+  # Set filename with incremented figure number
+  filename <- paste0(output_path, "figures/", sprintf("%03d", figure_counter), "HeatMap_cluster_plot")
+  # Save in TIFF and PDF formats
+  ggsave(paste0(filename, tiff_extension), plot, width = 12, height = 6, units = "in")
+  ggsave(paste0(filename, pdf_extension), plot, width = 12, height = 6, units = "in")
+  # Increment the figure counter
+  figure_counter <<- figure_counter + 1  # Use <<- to update the external variable
+```
+
+# 6. Clustering association
+
+1.  Use 'SingleR' is a widely used tool that compares gene expression
+    profiles of your clusters to predefined reference databases. Load an
+    appropriate reference database. For example:
+
+-   MouseRNAseqData: Reference for murine tissues.
+-   ImmGenData: Immunological reference.
+-   HumanPrimaryCellAtlasData: For human cells.
+
+2.  Use scType for fast annotation 'scType' is a simpler, more
+    customizable tool that uses user-defined or database-available
+    marker lists.
+
+    Comparison between 'SingleR' and 'scType'
+    
+    | Feature           | SingleR                         | scType            |
+    |-------------------|---------------------------------|-------------------|
+    | **Ease of use**   | More robust but more technical  |  Simpler          |
+    | **Database**      | Use predefined references       | Use marker lists  |
+    | **Customization** | Limited                         | Very customizable |
+    | **Speed**         | Moderate                        |  Very fast        |
+
+    : Recommendation If you have a well-characterized dataset (such as
+    mouse brain transcriptomics), use SingleR with a database such as
+    MouseRNAseqData. If you prefer greater flexibility or speed, try
+    scType with specific marker lists.
+
+
+## Allen Brain Atlas clustering
+Download matrix Gene expression matrix and Table cell metadata from Allen Brain Atlas Cell Types Database: RNA-Seq Data (https://portal.brain-map.org/atlases-and-data/rnaseq)
+Whole Cortex & Hippocampus - 10x genomics (2020)
+with 10x-SMART-seq taxonomy (2021)
+```{r}
+
+# Extraer la matriz de expresión y las identidades de los clusters
+cluster.markers <- GetAssayData(data_merge, slot = "data")
+cluster.ids <- Idents(data_merge)
+
+# Cargar los archivos CSV
+median_data <- fread("rawdata/medians.csv")
+trimmed_means_data <- fread("rawdata/trimmed_means.csv")
+
+# Verificar las primeras filas
+head(median_data)
+head(trimmed_means_data)
+
+# Revisar dimensiones
+dim(median_data)
+dim(trimmed_means_data)
+
+# Convertir a matriz
+median_matrix <- as.matrix(median_data[ , -1, with = FALSE])  # Asumiendo que la primera columna son los nombres de genes
+rownames(median_matrix) <- median_data[[1]]  # Asignar nombres de genes a las filas
+
+trimmed_means_matrix <- as.matrix(trimmed_means_data[ , -1, with = FALSE])  # Similar al anterior
+rownames(trimmed_means_matrix) <- trimmed_means_data[[1]]
+
+# Crear referencia de SingleR
+# Crear un nuevo objeto SummarizedExperiment con logcounts
+reference_median <- SummarizedExperiment(
+    assays = list(logcounts = log1p(median_matrix)), # Aplicar log-transformation
+    rowData = DataFrame(gene = rownames(median_matrix)),
+    colData = DataFrame(label.main = colnames(median_matrix))
+)
+# Revisar las etiquetas
+colData(reference_median)
+
+# Confirmar que `label.main` contiene los nombres de los tipos celulares
+reference_median$label.main <- colnames(median_matrix)
+
+reference_trimmed <- SummarizedExperiment(
+    assays = list(logcounts = log1p(trimmed_means_matrix)), # Aplicar log-transformation
+    rowData = DataFrame(gene = rownames(trimmed_means_matrix)),
+    colData = DataFrame(label.main = colnames(trimmed_means_matrix))
+)
+# Revisar las etiquetas
+colData(reference_trimmed)
+
+# Confirmar que `label.main` contiene los nombres de los tipos celulares
+reference_trimmed$label.main <- colnames(trimmed_means_matrix)
+```
+
+
+```{r}
+# Comparar con la base de datos de referencia
+annotations_median <- SingleR(test = cluster.markers, 
+                       ref = reference_median, 
+                       labels = reference_median$label.main,
+                       clusters = cluster.ids)
+
+
+# Revisar resultados
+head(annotations_median)
+```
+
+
+```{r}
+# Comparar con la base de datos de referencia
+annotations_trimmed <- SingleR(test = cluster.markers, 
+                       ref = reference_trimmed, 
+                       labels = reference_trimmed$label.main,
+                       clusters = cluster.ids)
+
+
+# Revisar resultados
+head(annotations_trimmed)
+```
+
+## Plot Median
+```{r}
+new.cluster.median <- annotations_median$labels
+names(new.cluster.median) <- levels(data_merge)
+data_merge_median <- RenameIdents(data_merge, new.cluster.median)
+```
+
+
+```{r}
+# Visualiza con las nuevas identidades
+plot <- DimPlot(data_merge_median, reduction = "umap", label = TRUE, repel = TRUE)
+print(plot)
+  # Set filename with incremented figure number
+  filename <- paste0(output_path, "figures/", sprintf("%03d", figure_counter), "UMAP_simple_cluster_plot")
+  # Save in TIFF and PDF formats
+  ggsave(paste0(filename, tiff_extension), plot, width = 12, height = 6, units = "in")
+  ggsave(paste0(filename, pdf_extension), plot, width = 12, height = 6, units = "in")
+  # Increment the figure counter
+  figure_counter <<- figure_counter + 1  # Use <<- to update the external variable
+
+```
+
+## Plot Trimmed
+```{r}
+new.cluster.trimmed <- annotations_trimmed$labels
+names(new.cluster.trimmed) <- levels(data_merge)
+data_merge_trimmed <- RenameIdents(data_merge, new.cluster.median)
+```
+
+
+```{r}
+# Visualiza con las nuevas identidades
+plot <- DimPlot(data_merge_trimmed, reduction = "umap", label = TRUE, repel = TRUE)
+print(plot)
+  # Set filename with incremented figure number
+  filename <- paste0(output_path, "figures/", sprintf("%03d", figure_counter), "UMAP_simple_cluster_plot")
+  # Save in TIFF and PDF formats
+  ggsave(paste0(filename, tiff_extension), plot, width = 12, height = 6, units = "in")
+  ggsave(paste0(filename, pdf_extension), plot, width = 12, height = 6, units = "in")
+  # Increment the figure counter
+  figure_counter <<- figure_counter + 1  # Use <<- to update the external variable
+
+```
+
+
+## MouseRNAseqData
+```{r}
+
+
+ref <- MouseRNAseqData()  # Change according needs
+# Extraer la matriz de expresión y las identidades de los clusters
+cluster.markers <- GetAssayData(data_merge, slot = "data")
+cluster.ids <- Idents(data_merge)
+
+# Comparar con la base de datos de referencia
+annotations_ms <- SingleR(test = cluster.markers, 
+                       ref = ref, 
+                       labels = ref$label.main,
+                       clusters = cluster.ids)
+
+# Ver los resultados
+head(annotations)
+```
+
+
+```{r}
+new.cluster.ids <- annotations_ms$labels
+names(new.cluster.ids) <- levels(data_merge)
+data_merge_ms <- RenameIdents(data_merge, new.cluster.ids)
+```
+
+
+```{r}
+# Visualiza con las nuevas identidades
+plot <- DimPlot(data_merge_ms, reduction = "umap", label = TRUE, repel = TRUE)
+print(plot)
+  # Set filename with incremented figure number
+  filename <- paste0(output_path, "figures/", sprintf("%03d", figure_counter), "UMAP_simple_cluster_plot")
+  # Save in TIFF and PDF formats
+  ggsave(paste0(filename, tiff_extension), plot, width = 12, height = 6, units = "in")
+  ggsave(paste0(filename, pdf_extension), plot, width = 12, height = 6, units = "in")
+  # Increment the figure counter
+  figure_counter <<- figure_counter + 1  # Use <<- to update the external variable
+
+```

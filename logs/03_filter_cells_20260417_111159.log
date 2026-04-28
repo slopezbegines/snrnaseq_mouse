@@ -1,0 +1,266 @@
+         used (Mb) gc trigger (Mb) max used (Mb)
+Ncells 300467 16.1     707691 37.8   492761 26.4
+Vcells 521917  4.0    8388608 64.0  1973914 15.1
+[PACKAGES] Loading CRAN packages...
+
+Adjuntando el paquete: ‘dplyr’
+
+The following objects are masked from ‘package:stats’:
+
+    filter, lag
+
+The following objects are masked from ‘package:base’:
+
+    intersect, setdiff, setequal, union
+
+
+Adjuntando el paquete: ‘data.table’
+
+The following object is masked from ‘package:purrr’:
+
+    transpose
+
+The following objects are masked from ‘package:dplyr’:
+
+    between, first, last
+
+
+Adjuntando el paquete: ‘scales’
+
+The following object is masked from ‘package:purrr’:
+
+    discard
+
+
+Adjuntando el paquete: ‘tictoc’
+
+The following object is masked from ‘package:data.table’:
+
+    shift
+
+Cargando paquete requerido: ggraph
+[PACKAGES] Loading Bioconductor packages...
+
+Cargando paquete requerido: SeuratObject
+Cargando paquete requerido: sp
+
+Adjuntando el paquete: ‘sp’
+
+The following object is masked from ‘package:ggraph’:
+
+    geometry
+
+‘SeuratObject’ was built under R 4.5.2 but the current version is
+4.5.3; it is recomended that you reinstall ‘SeuratObject’ as the ABI
+for R may have changed
+‘SeuratObject’ was built with package ‘Matrix’ 1.7.4 but the current
+version is 1.7.5; it is recomended that you reinstall ‘SeuratObject’ as
+the ABI for ‘Matrix’ may have changed
+
+Adjuntando el paquete: ‘SeuratObject’
+
+The following objects are masked from ‘package:base’:
+
+    intersect, t
+
+Cargando paquete requerido: SummarizedExperiment
+Cargando paquete requerido: MatrixGenerics
+Cargando paquete requerido: matrixStats
+
+Adjuntando el paquete: ‘matrixStats’
+
+The following object is masked from ‘package:dplyr’:
+
+    count
+
+
+Adjuntando el paquete: ‘MatrixGenerics’
+
+The following objects are masked from ‘package:matrixStats’:
+
+    colAlls, colAnyNAs, colAnys, colAvgsPerRowSet, colCollapse,
+    colCounts, colCummaxs, colCummins, colCumprods, colCumsums,
+    colDiffs, colIQRDiffs, colIQRs, colLogSumExps, colMadDiffs,
+    colMads, colMaxs, colMeans2, colMedians, colMins, colOrderStats,
+    colProds, colQuantiles, colRanges, colRanks, colSdDiffs, colSds,
+    colSums2, colTabulates, colVarDiffs, colVars, colWeightedMads,
+    colWeightedMeans, colWeightedMedians, colWeightedSds,
+    colWeightedVars, rowAlls, rowAnyNAs, rowAnys, rowAvgsPerColSet,
+    rowCollapse, rowCounts, rowCummaxs, rowCummins, rowCumprods,
+    rowCumsums, rowDiffs, rowIQRDiffs, rowIQRs, rowLogSumExps,
+    rowMadDiffs, rowMads, rowMaxs, rowMeans2, rowMedians, rowMins,
+    rowOrderStats, rowProds, rowQuantiles, rowRanges, rowRanks,
+    rowSdDiffs, rowSds, rowSums2, rowTabulates, rowVarDiffs, rowVars,
+    rowWeightedMads, rowWeightedMeans, rowWeightedMedians,
+    rowWeightedSds, rowWeightedVars
+
+Cargando paquete requerido: GenomicRanges
+Cargando paquete requerido: stats4
+Cargando paquete requerido: BiocGenerics
+Cargando paquete requerido: generics
+
+Adjuntando el paquete: ‘generics’
+
+The following object is masked from ‘package:dplyr’:
+
+    explain
+
+The following objects are masked from ‘package:base’:
+
+    as.difftime, as.factor, as.ordered, intersect, is.element, setdiff,
+    setequal, union
+
+
+Adjuntando el paquete: ‘BiocGenerics’
+
+The following object is masked from ‘package:dplyr’:
+
+    combine
+
+The following objects are masked from ‘package:stats’:
+
+    IQR, mad, sd, var, xtabs
+
+The following objects are masked from ‘package:base’:
+
+    anyDuplicated, aperm, append, as.data.frame, basename, cbind,
+    colnames, dirname, do.call, duplicated, eval, evalq, Filter, Find,
+    get, grep, grepl, is.unsorted, lapply, Map, mapply, match, mget,
+    order, paste, pmax, pmax.int, pmin, pmin.int, Position, rank,
+    rbind, Reduce, rownames, sapply, saveRDS, table, tapply, unique,
+    unsplit, which.max, which.min
+
+Cargando paquete requerido: S4Vectors
+
+Adjuntando el paquete: ‘S4Vectors’
+
+The following objects are masked from ‘package:data.table’:
+
+    first, second
+
+The following object is masked from ‘package:tidyr’:
+
+    expand
+
+The following objects are masked from ‘package:dplyr’:
+
+    first, rename
+
+The following object is masked from ‘package:utils’:
+
+    findMatches
+
+The following objects are masked from ‘package:base’:
+
+    expand.grid, I, unname
+
+Cargando paquete requerido: IRanges
+
+Adjuntando el paquete: ‘IRanges’
+
+The following object is masked from ‘package:sp’:
+
+    %over%
+
+The following object is masked from ‘package:tictoc’:
+
+    shift
+
+The following object is masked from ‘package:data.table’:
+
+    shift
+
+The following object is masked from ‘package:purrr’:
+
+    reduce
+
+The following objects are masked from ‘package:dplyr’:
+
+    collapse, desc, slice
+
+Cargando paquete requerido: Seqinfo
+Cargando paquete requerido: Biobase
+Welcome to Bioconductor
+
+    Vignettes contain introductory material; view with
+    'browseVignettes()'. To cite Bioconductor, see
+    'citation("Biobase")', and for packages 'citation("pkgname")'.
+
+
+Adjuntando el paquete: ‘Biobase’
+
+The following object is masked from ‘package:MatrixGenerics’:
+
+    rowMedians
+
+The following objects are masked from ‘package:matrixStats’:
+
+    anyMissing, rowMedians
+
+
+Adjuntando el paquete: ‘SummarizedExperiment’
+
+The following object is masked from ‘package:Seurat’:
+
+    Assays
+
+The following object is masked from ‘package:SeuratObject’:
+
+    Assays
+
+
+Adjuntando el paquete: ‘celldex’
+
+The following objects are masked from ‘package:SingleR’:
+
+    BlueprintEncodeData, DatabaseImmuneCellExpressionData,
+    HumanPrimaryCellAtlasData, ImmGenData, MonacoImmuneData,
+    MouseRNAseqData, NovershternHematopoieticData
+
+Cargando paquete requerido: AnnotationDbi
+
+Adjuntando el paquete: ‘AnnotationDbi’
+
+The following object is masked from ‘package:dplyr’:
+
+    select
+
+
+Adjuntando el paquete: ‘glmGamPoi’
+
+The following object is masked from ‘package:ggplot2’:
+
+    vars
+
+The following object is masked from ‘package:dplyr’:
+
+    vars
+
+Cargando paquete requerido: SingleCellExperiment
+[PACKAGES] Checking GitHub packages...
+Registered S3 method overwritten by 'SeuratDisk':
+  method            from  
+  as.sparse.H5Group Seurat
+
+[PACKAGES] All packages loaded. Session info:
+R version: R version 4.5.3 (2026-03-11) 
+Seurat version: 5.4.0 
+SingleR version: 2.12.0 
+DoubletFinder loaded: TRUE 
+glmGamPoi available: TRUE 
+[OK] Directory structure ready at: output/GSE194315/SCT/
+
+=== STEP 03: Cell Filtering ===
+
+[CHECKPOINT] Loaded: output/GSE194315/SCT/RData/checkpoint_02_seurat_qc.rds  (11:12:14)
+[FILTER] PBMC-01-1: 27206 → singlets 20490 → QC 19790 (kept 72.7%)
+[FILTER] PBMC-02-1: 5798 → singlets 4563 → QC 4509 (kept 77.8%)
+[FILTER] PBMC-03-1: 20050 → singlets 9609 → QC 9496 (kept 47.4%)
+[FILTER] PBMC-04-1: 19432 → singlets 15491 → QC 15229 (kept 78.4%)
+[FILTER] PBMC-05-1: 19482 → singlets 14229 → QC 13862 (kept 71.2%)
+[FILTER] PBMC-06-1: 17193 → singlets 14428 → QC 13713 (kept 79.8%)
+[FILTER] PBMC-07-1: 18616 → singlets 15319 → QC 14521 (kept 78.0%)
+[FILTER] PBMC-01-2: 20626 → singlets 17138 → QC 16498 (kept 80.0%)
+[FILTER] PBMC-02-2: 4281 → singlets 3511 → QC 3453 (kept 80.7%)
+[FILTER] PBMC-03-2: 19490 → singlets 8860 → QC 8748 (kept 44.9%)
+[FILTER] PBMC-04-2: 21938 → singlets 16938 → QC 16581 (kept 75.6%)
