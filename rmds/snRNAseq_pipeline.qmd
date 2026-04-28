@@ -209,8 +209,16 @@ mitochondrial ratio mark, unless of course you are expecting this in
 your sample.
 
 
-```{r}
-
+```{r plot_mt_dist}
+p <- combined_meta %>%
+  ggplot(aes(x = percent.MT, color = library, fill = library)) +
+  geom_density(alpha = 0.15) +
+  geom_vline(xintercept = QC_MAX_MT, linetype = "dashed", color = "red") +
+  theme_classic(base_size = 10) +
+  theme(legend.position = "none") +
+  labs(title = paste0("Mitochondrial % (pre-filter) | threshold = ", QC_MAX_MT, "%"),
+       x = "% Mitochondrial reads", y = "Density")
+print(p)
 ```
 
 
@@ -238,8 +246,25 @@ cells have a high number of UMIs but only a few number of genes. These
 could be dying cells, but also could represent a population of a low
 complexity celltype (i.e red blood cells).
 
-```{r}
+```{r plot_umi_vs_genes}
+# Downsample to 50k cells for faster rendering
+set.seed(123)
+plot_meta <- combined_meta %>%
+  dplyr::sample_n(min(nrow(.), 50000)) %>%
+  dplyr::filter(!is.na(Status))
 
+p <- plot_meta %>%
+  ggplot(aes(x = nCount_RNA, y = nFeature_RNA, color = percent.MT)) +
+  geom_point(size = 0.3, alpha = 0.5) +
+  scale_colour_gradient(low = "grey90", high = "red") +
+  scale_x_log10() + scale_y_log10() +
+  geom_vline(xintercept = QC_MIN_COUNTS, linetype = "dashed") +
+  geom_hline(yintercept = QC_MIN_FEATURES, linetype = "dashed") +
+  facet_wrap(~Status, ncol = 3) +
+  theme_classic(base_size = 9) +
+  labs(title = "UMIs vs Genes per cell (pre-filter, 50k sample)",
+       x = "nCount_RNA (log10)", y = "nFeature_RNA (log10)")
+print(p)
 ```
 
 
@@ -254,8 +279,15 @@ cells. Sometimes we can detect contamination with low complexity cell
 types like red blood cells via this metric. Generally, we expect the
 novelty score to be above 0.80.
 
-```{r}
-
+```{r plot_complexity}
+p <- combined_meta %>%
+  ggplot(aes(x = log10GenesPerUMI, color = library, fill = library)) +
+  geom_density(alpha = 0.15) +
+  geom_vline(xintercept = QC_MIN_COMPLEXITY, linetype = "dashed", color = "red") +
+  theme_classic(base_size = 10) +
+  theme(legend.position = "none") +
+  labs(title = "Transcriptome complexity (pre-filter)",
+       x = "log10(Genes / UMI)", y = "Density")
 ```
 
 

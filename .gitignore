@@ -8,6 +8,7 @@ r_session.RDataTmp
 rawdata/
 code_claude/
 code/old/
+logs/
 # Pipeline outputs (figures, Seurat objects, tables)
 output/
 rmds/output
