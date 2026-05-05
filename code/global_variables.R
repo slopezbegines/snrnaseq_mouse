@@ -26,7 +26,7 @@ QC_MIN_FEATURES <- 200 # Minimum genes detected per cell
 QC_MAX_FEATURES <- 5000 # Maximum genes per cell (high = likely doublet)
 QC_MIN_COUNTS <- 500 # Minimum UMI counts per cell
 QC_MAX_COUNTS <- 25000 # Maximum UMI counts per cell (high = likely doublet)
-QC_MAX_MT <- 20 # Maximum % mitochondrial reads
+QC_MAX_MT <- 2 # Maximum % mitochondrial reads
 # NOTE: PBMCs have cytoplasm → higher baseline MT than nuclei
 # Paper used snRNA from brain (1% MT), here 20% is standard
 QC_MIN_COMPLEXITY <- 0.80 # Minimum log10(genes / UMI) novelty score

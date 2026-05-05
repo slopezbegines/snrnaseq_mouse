@@ -128,3 +128,55 @@ build_combined_meta <- function(seurat_list) {
       dplyr::mutate(library = nm)
   }))
 }
+
+
+# 3. DOUBLETFINDER (per-library, with checkpoint recovery) ####
+
+
+#' Detect doublets on one Seurat object using scDblFinder; returns a data.frame
+#' with barcode, doublet classification, and score.
+#' Results saved as: output_path/RData/doublets/df_<lib_name>.rds
+#'
+#' Replaces DoubletFinder (abandoned, recurring xtfrm.data.frame bug with
+#' Seurat v5). scDblFinder is the Bioconductor standard and is already used
+#' in code/Doublets_Finders.R.
+#'
+#' @param seurat_obj  Filtered (but not yet SCT-normalized) Seurat object
+#' @param lib_name    Library identifier string
+#' @param out_path    Base output path (output_path variable)
+#' @return data.frame with columns: barcode, df_classification, pANN
+run_doubletfinder <- function(seurat_obj, lib_name, out_path = output_path) {
+  df_dir <- paste0(out_path, "RData/doublets/")
+  df_file <- paste0(df_dir, "df_", lib_name, ".rds")
+  dir.create(df_dir, recursive = TRUE, showWarnings = FALSE)
+
+  if (file.exists(df_file)) {
+    message(sprintf("[DF] Checkpoint found — loading: %s", lib_name))
+    return(readRDS(df_file))
+  }
+
+  message(sprintf("[DF] Running scDblFinder: %s  (%d cells)", lib_name, ncol(seurat_obj)))
+  tic()
+
+  sce <- as.SingleCellExperiment(seurat_obj)
+  sce <- scDblFinder::scDblFinder(sce)
+
+  result <- data.frame(
+    barcode           = colnames(sce),
+    df_classification = ifelse(sce$scDblFinder.class == "doublet", "Doublet", "Singlet"),
+    pANN              = sce$scDblFinder.score,
+    row.names         = colnames(sce),
+    stringsAsFactors  = FALSE
+  )
+
+  saveRDS(result, file = df_file)
+  toc()
+  gc()
+
+  message(sprintf(
+    "  [DF] Singlets: %d | Doublets: %d",
+    sum(result$df_classification == "Singlet"),
+    sum(result$df_classification == "Doublet")
+  ))
+  result
+}

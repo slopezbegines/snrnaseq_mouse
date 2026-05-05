@@ -47,10 +47,12 @@ plan("sequential")
 ## Packages
 
 ```{r packages}
+#| message: false
+#| warning: false  
+
 source("../code/00_packages.R")
 ```
 
-## Functions and global variables
 
 ```{r load_globals}
 source("../code/global_variables.R")
@@ -143,14 +145,18 @@ if (check_checkpoint("02_seurat_qc")) {
 ```
 ## Pre-filter QC overview (combined across all libraries)
 ```{r qc_combined_meta}
-combined_meta <- build_combined_meta(seurat_qc)
-cat("Total barcodes with QC metrics:", nrow(combined_meta), "\n")
-cat("Libraries:", length(unique(combined_meta$library)), "\n")
+combined_meta_prefilter <- build_combined_meta(seurat_qc)
+cat("Total barcodes with QC metrics:", nrow(combined_meta_prefilter), "\n")
+cat("Libraries:", length(unique(combined_meta_prefilter$library)), "\n")
+
+# Save metadata_prefilter for downstream use
+save_checkpoint(combined_meta_prefilter, "02_combined_meta_prefilter")
 ```
+
 ### Cells per library
 
-```{r}
-combined_plot <- combined_meta %>%
+```{r plot_ncells_prelim}
+p_cells_library <- combined_meta_prefilter %>%
   ggplot(aes(x = library, fill = condition)) +
   geom_bar() +
   theme_classic() +
@@ -161,7 +167,11 @@ combined_plot <- combined_meta %>%
   ylab("Number of Cells") 
   # + facet_wrap(~region)
 
-print(combined_plot)
+
+print(p_cells_library)
+plots_prefilter[["p_cells_library"]] <- p_cells_library
+
+rm(p_cells_library)
 ```
 ### UMI counts distribution
 
@@ -169,6 +179,26 @@ The UMI counts per cell (nCount_RNA) should generally be above 500, that
 is the low end of what we expect. If UMI counts are between 500-1000
 counts, it is usable but the cells probably should have been sequenced
 more deeply.
+
+```{r plot_umi_dist}
+p_UMI_dist <- combined_meta_prefilter %>%
+  ggplot(aes(x = nCount_RNA, color = library, fill = library)) +
+  geom_density(alpha = 0.15) +
+  scale_x_log10() +
+  geom_vline(xintercept = QC_MIN_COUNTS, linetype = "dashed", color = "red") +
+  geom_vline(xintercept = QC_MAX_COUNTS, linetype = "dashed", color = "red") +
+  theme_classic(base_size = 10) +
+  theme(legend.position = "none") +
+  facet_wrap(~region, ncol = 2) +
+  labs(title = "UMI distribution per library (pre-filter)",
+       x = "nCount_RNA (log10)", y = "Density")
+
+print(p_UMI_dist)
+plots_prefilter[["p_UMI_dist"]] <- p_UMI_dist
+
+rm(p_UMI_dist)
+```
+
 ### Genes detected per cell
 We have similar expectations for gene detection as for UMI detection,
 although it may be a bit lower than UMIs. For high quality data, the
@@ -183,8 +213,8 @@ type is much smaller than the other (i.e. cells with high counts may be
 cells that are larger in size). Therefore, this threshold should be
 assessed with other metrics that we describe in this lesson.
 
-```{r}
-combined_plot <-  combined_meta %>%
+```{r plot_genes_dis}
+p_genes_dist <-  combined_meta_prefilter %>%
   ggplot(aes(x = nCount_RNA, color = library, fill = library)) +
   geom_density(alpha = 0.15) +
   scale_x_log10() +
@@ -192,11 +222,15 @@ combined_plot <-  combined_meta %>%
   geom_vline(xintercept = QC_MAX_COUNTS, linetype = "dashed", color = "red") +
   theme_classic(base_size = 10) +
   theme(legend.position = "none") +
+  facet_wrap(~region, ncol = 2) +
   labs(title = "UMI distribution per library (pre-filter)",
        x = "nCount_RNA (log10)", y = "Density")
 
 
-print(combined_plot)
+print(p_genes_dist)
+plots_prefilter[["p_genes_dist"]] <- p_genes_dist
+
+rm(p_genes_dist)
 ```
 
 
@@ -210,15 +244,20 @@ your sample.
 
 
 ```{r plot_mt_dist}
-p <- combined_meta %>%
+p_mt_dist <- combined_meta_prefilter %>%
+  dplyr::filter(percent.MT<=5) %>%  # Filter out extreme outliers for better visualization)
   ggplot(aes(x = percent.MT, color = library, fill = library)) +
   geom_density(alpha = 0.15) +
   geom_vline(xintercept = QC_MAX_MT, linetype = "dashed", color = "red") +
   theme_classic(base_size = 10) +
   theme(legend.position = "none") +
+  facet_wrap(~region, ncol = 2) +
   labs(title = paste0("Mitochondrial % (pre-filter) | threshold = ", QC_MAX_MT, "%"),
        x = "% Mitochondrial reads", y = "Density")
-print(p)
+print(p_mt_dist)
+plots_prefilter[["p_mt_dist"]] <- p_mt_dist
+
+rm(p_mt_dist)
 ```
 
 
@@ -247,24 +286,21 @@ could be dying cells, but also could represent a population of a low
 complexity celltype (i.e red blood cells).
 
 ```{r plot_umi_vs_genes}
-# Downsample to 50k cells for faster rendering
-set.seed(123)
-plot_meta <- combined_meta %>%
-  dplyr::sample_n(min(nrow(.), 50000)) %>%
-  dplyr::filter(!is.na(Status))
-
-p <- plot_meta %>%
+p_umi_vs_genes <- combined_meta_prefilter %>%
   ggplot(aes(x = nCount_RNA, y = nFeature_RNA, color = percent.MT)) +
   geom_point(size = 0.3, alpha = 0.5) +
   scale_colour_gradient(low = "grey90", high = "red") +
   scale_x_log10() + scale_y_log10() +
   geom_vline(xintercept = QC_MIN_COUNTS, linetype = "dashed") +
   geom_hline(yintercept = QC_MIN_FEATURES, linetype = "dashed") +
-  facet_wrap(~Status, ncol = 3) +
+  facet_wrap(~region, ncol = 2) +
   theme_classic(base_size = 9) +
   labs(title = "UMIs vs Genes per cell (pre-filter, 50k sample)",
        x = "nCount_RNA (log10)", y = "nFeature_RNA (log10)")
-print(p)
+print(p_umi_vs_genes)
+plots_prefilter[["p_umi_vs_genes"]] <- p_umi_vs_genes
+
+rm(p_umi_vs_genes)
 ```
 
 
@@ -280,15 +316,118 @@ types like red blood cells via this metric. Generally, we expect the
 novelty score to be above 0.80.
 
 ```{r plot_complexity}
-p <- combined_meta %>%
+p_complexity <- combined_meta_prefilter %>%
   ggplot(aes(x = log10GenesPerUMI, color = library, fill = library)) +
   geom_density(alpha = 0.15) +
   geom_vline(xintercept = QC_MIN_COMPLEXITY, linetype = "dashed", color = "red") +
   theme_classic(base_size = 10) +
   theme(legend.position = "none") +
+  facet_wrap(~region, ncol = 2) +
   labs(title = "Transcriptome complexity (pre-filter)",
        x = "log10(Genes / UMI)", y = "Density")
+
+print(p_complexity)
+
+plots_prefilter[["p_complexity"]] <- p_complexity
+
+rm(p_complexity)
+```
+```{r}
+base::saveRDS(plots_prefilter, file.path(paste0(output_path, "RData", "plots_prefilter.RDS")))
+rm(plots_prefilter, combined_meta_prefilter)
+gc()
 ```
 
 
+# 3. Cell Filtering
+
+Three-layer filtering strategy:
+
+1. **Demuxlet singlet filter** — Remove barcodes classified as doublets
+   by Demuxlet (included in paper metadata: `DemuxletType == "SNG"`)
+2. **Study inclusion filter** — Keep only cells the authors included
+   (`IncludedInStudy == TRUE`)
+3. **QC thresholds** — Standard human PBMC thresholds
+
+```{r}
+cat("Filtering Parameters:\n")
+cat("===========================\n")
+cat("Genes per cell: Minimun: ", QC_MIN_FEATURES,  ", Maximum: ", QC_MAX_FEATURES, "\n")
+cat("Genes Counts: Minimun: ", QC_MIN_COUNTS,  ", Maximum: ", QC_MAX_COUNTS, "\n")
+cat("Ribosomal % Counts: Minimun: ", QC_MIN_RIBO,  ", Maximum: ", QC_MAX_RIBO, "\n")
+cat("Maximum % mitochondrial reads:", QC_MAX_MT,"\n\n" )
+```
+
+```{r filter_cells}
+if (check_checkpoint("03_seurat_filtered")) {
+  seurat_filtered <- load_checkpoint("03_seurat_filtered")
+} else {
+  libs_dir <- paste0(output_path, "RData/filtered_libs/")
+  dir.create(libs_dir, recursive = TRUE, showWarnings = FALSE)
+
+  seurat_qc  <- load_checkpoint("02_seurat_qc")
+  lib_names  <- names(seurat_qc)
+
+  # --- Sequential loop: filter one library at a time --------------------------
+  # After filtering each library it is saved individually and its slot in
+  # seurat_qc is nulled so peak RAM stays bounded (~size of seurat_qc alone).
+  for (lib_name in lib_names) {
+    lib_rds <- paste0(libs_dir, "filtered_", lib_name, ".rds")
+
+    if (file.exists(lib_rds)) {
+      message(sprintf("[SKIP] Already filtered: %s", lib_name))
+      seurat_qc[[lib_name]] <- NULL   # free slot even when skipping
+      gc()
+      next
+    }
+
+    obj <- seurat_qc[[lib_name]]
+    n0  <- ncol(obj)
+    
+    # Layer 1: Demuxlet singlet filter
+    
+
+    # Layer 2: Paper inclusion filter
+    # NOTE: cells with IncludedInStudy == FALSE may still pass QC;
+    #        we include them here but flag them for optional downstream exclusion
+    # (keep all singlets regardless of IncludedInStudy for our own QC analysis)
+
+    # Layer 3: Standard human PBMC QC thresholds
+    obj <- subset(obj,
+                  subset = nFeature_RNA     >= QC_MIN_FEATURES   &
+                           nFeature_RNA     <= QC_MAX_FEATURES   &
+                           nCount_RNA       >= QC_MIN_COUNTS     &
+                           nCount_RNA       <= QC_MAX_COUNTS     &
+                           percent.MT       <= QC_MAX_MT         &
+                           log10GenesPerUMI >= QC_MIN_COMPLEXITY)
+    n1 <- ncol(obj)
+
+    message(sprintf("[FILTER] %s: %d → filter %d (kept %.1f%%)",
+                    lib_name, n0, n1,  n1 / n0 * 100))
+
+    saveRDS(obj, file = lib_rds)
+    message(sprintf("[SAVED]  %s", lib_rds))
+
+    # Free this library's slot before loading the next one
+    seurat_qc[[lib_name]] <- NULL
+    rm(obj); gc()
+  }
+  rm(seurat_qc); gc()
+
+  # --- Assemble final list from individual checkpoints ------------------------
+  message("\n[ASSEMBLE] Loading individual filtered libraries...")
+  seurat_filtered <- lapply(lib_names, function(lib_name) {
+    readRDS(paste0(libs_dir, "filtered_", lib_name, ".rds"))
+  })
+  names(seurat_filtered) <- lib_names
+
+  save_checkpoint(seurat_filtered, "03_seurat_filtered")
+
+  # To remove individual per-library files after the combined checkpoint is
+  # confirmed good, uncomment and run manually:
+  # unlink(paste0(libs_dir, "filtered_", lib_names, ".rds"))
+}
+```
+
+## Post-filter QC summary
 
