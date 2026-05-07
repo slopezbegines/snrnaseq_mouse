@@ -15,13 +15,16 @@ library(pak)
 
 # Print system requirements for any missing packages (informational) ----------
 check_sysreqs <- function(pkgs) {
-  tryCatch({
-    reqs <- pak::pkg_sysreqs(pkgs)
-    if (length(reqs$packages) > 0) {
-      message("[SYSREQS] Missing system packages detected:")
-      message("  Run: sudo apt-get install -y ", paste(reqs$packages, collapse = " "))
-    }
-  }, error = function(e) invisible(NULL))
+  tryCatch(
+    {
+      reqs <- pak::pkg_sysreqs(pkgs)
+      if (length(reqs$packages) > 0) {
+        message("[SYSREQS] Missing system packages detected:")
+        message("  Run: sudo apt-get install -y ", paste(reqs$packages, collapse = " "))
+      }
+    },
+    error = function(e) invisible(NULL)
+  )
 }
 
 # Helper: install + load, skipping already-installed -------------------------
@@ -69,43 +72,35 @@ load_pkgs(cran_packages)
 message("[PACKAGES] Loading Bioconductor packages...")
 
 bioc_packages <- paste0("bioc::", c(
-  "SingleR",            # Automated cell type annotation
-  "celldex",            # Reference datasets for SingleR
-  "org.Hs.eg.db",       # Gene annotations (Human)
+  "SingleR", # Automated cell type annotation
+  "celldex", # Reference datasets for SingleR
+  "org.Hs.eg.db", # Gene annotations (Human)
   "BiocParallel",
   "SummarizedExperiment",
   "S4Vectors",
-  "glmGamPoi",          # Faster SCTransform backend
-  "MAST",               # Faster DE testing
+  "glmGamPoi", # Faster SCTransform backend
+  "MAST", # Faster DE testing
   "EnhancedVolcano",
-  "scDblFinder"         # Doublet detection
+  "scDblFinder" # Doublet detection
 ))
-# 
+#
 load_pkgs(bioc_packages)
 
 # =============================================================================
 # GitHub packages
 # =============================================================================
-message("[PACKAGES] Checking GitHub packages...")
-
-gh_packages <- c(
-  "chris-mcginnis-ucsf/DoubletFinder",
-  "mojaveazure/seurat-disk",
-  "satijalab/seurat-data",
-  "satijalab/seurat-wrappers"
-)
 
 # pkg names as installed (for requireNamespace check)
-gh_names <- c("DoubletFinder", "SeuratDisk", "SeuratData", "SeuratWrappers")
+gh_packages <- c("DoubletFinder", "SeuratDisk", "SeuratData", "SeuratWrappers")
 
 for (i in seq_along(gh_packages)) {
-  if (!requireNamespace(gh_names[i], quietly = TRUE)) {
+  if (!requireNamespace(gh_packages[i], quietly = TRUE)) {
     message("[INSTALL] Installing from GitHub: ", gh_packages[i])
     pak::pkg_install(gh_packages[i], ask = FALSE, upgrade = FALSE)
   }
-  if (requireNamespace(gh_names[i], quietly = TRUE)) {
+  if (requireNamespace(gh_packages[i], quietly = TRUE)) {
     suppressPackageStartupMessages(suppressWarnings(
-      library(gh_names[i], character.only = TRUE, warn.conflicts = FALSE, quietly = TRUE)
+      library(gh_packages[i], character.only = TRUE, warn.conflicts = FALSE, quietly = TRUE)
     ))
   }
 }
@@ -119,6 +114,8 @@ cat("Seurat version:", as.character(packageVersion("Seurat")), "\n")
 cat("SingleR version:", as.character(packageVersion("SingleR")), "\n")
 cat("DoubletFinder loaded:", requireNamespace("DoubletFinder", quietly = TRUE), "\n")
 cat("glmGamPoi available:", requireNamespace("glmGamPoi", quietly = TRUE), "\n")
+cat("SeuratDisk available:", requireNamespace("SeuratDisk", quietly = TRUE), "\n")
+cat("SeuratWrappers available:", requireNamespace("SeuratWrappers", quietly = TRUE), "\n")
 
 # Clean environment
 rm(check_sysreqs, load_pkgs, cran_packages, bioc_packages, gh_packages, gh_names)

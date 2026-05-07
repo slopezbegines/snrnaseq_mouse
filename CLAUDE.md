@@ -2,6 +2,23 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+---
+
+## CRITICAL: File Modification Safety Rules
+
+**NEVER modify a file that was not explicitly named in the user's request.**
+
+This is non-negotiable. Violations have already caused loss of work (deleted lines from `.qmd` notebooks that had to be manually reconstructed).
+
+Specific rules:
+- **Only touch the file(s) the user explicitly asks to edit.** If a task involves `00_packages.R`, do not open or write to any `.Rmd`, `.qmd`, or other script.
+- **Never reformat, clean up, reorganize, or "optimize" code in a file unless the user asks for it explicitly.**
+- **For `.Rmd` and `.qmd` notebooks**: only modify the specific chunk or section requested. Never restructure YAML headers, chunk options, prose, or surrounding code.
+- **When in doubt, ask** which file to edit rather than making assumptions and touching multiple files.
+- **Read before writing**: always read the full file content before making any edit, and use targeted `Edit` operations (never `Write` to overwrite an existing notebook).
+
+---
+
 ## What this repo is
 
 End-to-end snRNA-seq analysis pipeline built on **Seurat v5** (R). Primary use case: multi-sample WT vs KO mouse brain experiments. The `code_claude/` subdirectory contains a parallel adaptation for a human PBMC CITE-seq public dataset (GSE194315) that serves as a reference/example.
@@ -42,11 +59,12 @@ The pipeline is **modular and script-sourced**: RMarkdown notebooks orchestrate 
 
 | Path | Purpose |
 |---|---|
-| `rmds/Single_Cell_10X_Integrated_functions_SCT - PV_Cre-chacon22.Rmd` | Main template for new multi-sample experiments (SCT + RPCA) |
-| `rmds/Clustering Association_FindAllMarkers.Rmd` | Downstream: cluster annotation + FindAllMarkers |
+| `rmds/snRNAseq_pipeline.qmd` | **Active primary notebook** — new Quarto pipeline being built from scratch |
+| `rmds/Single_Cell_10X_Integrated_functions_SCT - PV_Cre-chacon22.Rmd` | Legacy Rmd template for multi-sample experiments (SCT + RPCA) |
+| `rmds/old/` | Archive of pre-SCTransform and experimental notebooks — do not modify |
 | `code_claude/GSE194315_PBMC_SCT_Analysis.Rmd` | Human PBMC reference analysis (full annotated example) |
 
-**For a new dataset:** copy the SCT template, set `output_path` and `data_path` in the setup chunk, tune thresholds in `global_variables.R`.
+**For a new dataset:** use `rmds/snRNAseq_pipeline.qmd` as the main entry point. Set `output_path` and `data_path` in the setup chunk, tune thresholds in `global_variables.R`.
 
 ## Configuration
 

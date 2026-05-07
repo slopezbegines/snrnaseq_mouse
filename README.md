@@ -89,13 +89,11 @@ flowchart TD
 │   ├── 01_sc_functions_GSE194315.R    # Checkpoint system + extended QC utilities
 │   └── GSE194315_PBMC_SCT_Analysis.Rmd  # Full analysis notebook for GSE194315
 │
-└── rmds/                              # R Markdown analysis notebooks
-    ├── README.md                      # Notebook guide — which .Rmd to use and when
-    ├── Single_Cell_10X_Integrated_functions_SCT - PV_Cre-chacon22.Rmd  # ⭐ Main template
-    ├── Single_Cell_10X_Integrated_functions_SCT -UBC_Cre.Rmd           # UBC-Cre template
-    ├── Clustering Association_FindAllMarkers.Rmd  # Downstream: cluster annotation
-    ├── Clustering Association.Rmd                 # Downstream: association analysis
-    └── [legacy notebooks]             # Pre-SCTransform versions — see rmds/README.md
+└── rmds/                              # Analysis notebooks
+    ├── snRNAseq_pipeline.qmd          # ⭐ Active primary notebook (Quarto, in development)
+    ├── README.md                      # Notebook guide — which file to use and when
+    ├── Single_Cell_10X_Integrated_functions_SCT - PV_Cre-chacon22.Rmd  # Legacy Rmd template
+    └── old/                           # Archived pre-SCTransform and experimental notebooks
 ```
 
 ---
@@ -143,12 +141,14 @@ renv::restore()   # Restores all packages from renv.lock (R 4.5.2)
 
 ### 2. Run the pipeline
 
-Open the appropriate RMarkdown notebook and set `data_path` to your CellRanger output directory:
+Open `rmds/snRNAseq_pipeline.qmd` in RStudio or VS Code and set `data_path` to your CellRanger output directory. Render via Quarto:
 
-```r
-# Main analysis
-rmarkdown::render("rmds/Single_Cell_10X_Integrated_functions_SCT.Rmd")
+```bash
+# Render the active Quarto pipeline
+quarto render rmds/snRNAseq_pipeline.qmd
 ```
+
+Or interactively in RStudio using the **Render** button.
 
 ### 3. Run enrichment modules independently
 

@@ -49,8 +49,9 @@ plan("sequential")
 ```{r packages}
 #| message: false
 #| warning: false  
-
+# renv::restore()  # Uncomment to restore packages from renv.lock
 source("../code/00_packages.R")
+# renv::snapshot()  # Snapshot current package state to renv.lock (uncomment if changes made
 ```
 
 
@@ -151,6 +152,9 @@ cat("Libraries:", length(unique(combined_meta_prefilter$library)), "\n")
 
 # Save metadata_prefilter for downstream use
 save_checkpoint(combined_meta_prefilter, "02_combined_meta_prefilter")
+
+plots_prefilter <- list()  # Initialize list to store pre-filter QC plots
+plots_filter <- list()     # Initialize list to store post-filter QC plots
 ```
 
 ### Cells per library
@@ -215,7 +219,7 @@ assessed with other metrics that we describe in this lesson.
 
 ```{r plot_genes_dis}
 p_genes_dist <-  combined_meta_prefilter %>%
-  ggplot(aes(x = nCount_RNA, color = library, fill = library)) +
+  ggplot(aes(x = nFeature_RNA, color = library, fill = library)) +
   geom_density(alpha = 0.15) +
   scale_x_log10() +
   geom_vline(xintercept = QC_MIN_COUNTS, linetype = "dashed", color = "red") +
@@ -223,8 +227,8 @@ p_genes_dist <-  combined_meta_prefilter %>%
   theme_classic(base_size = 10) +
   theme(legend.position = "none") +
   facet_wrap(~region, ncol = 2) +
-  labs(title = "UMI distribution per library (pre-filter)",
-       x = "nCount_RNA (log10)", y = "Density")
+  labs(title = "Distribution of number of genes (pre-filter)",
+       x = "nFeature_RNA", y = "Density")
 
 
 print(p_genes_dist)
@@ -332,9 +336,11 @@ plots_prefilter[["p_complexity"]] <- p_complexity
 
 rm(p_complexity)
 ```
+
 ```{r}
-base::saveRDS(plots_prefilter, file.path(paste0(output_path, "RData", "plots_prefilter.RDS")))
-rm(plots_prefilter, combined_meta_prefilter)
+base::saveRDS(plots_prefilter, file.path(output_path, "RData", "QC_plots_prefilter.rds"))
+plots_prefilter <- readRDS(paste0(output_path,"RData/QC_plots_prefilter.rds"))
+rm(combined_meta_prefilter)
 gc()
 ```
 
@@ -430,4 +436,272 @@ if (check_checkpoint("03_seurat_filtered")) {
 ```
 
 ## Post-filter QC summary
+
+```{r qc_combined_meta}
+combined_meta_filter <- build_combined_meta(seurat_filtered)
+cat("Total barcodes with QC metrics:", nrow(combined_meta_filter), "\n")
+cat("Libraries:", length(unique(combined_meta_filter$library)), "\n")
+
+# Save metadata_prefilter for downstream use
+save_checkpoint(combined_meta_filter, "03_combined_meta_filter")
+```
+
+### Cells per library
+
+```{r plot_ncells_prelim}
+p_cells_library <- combined_meta_filter %>%
+  ggplot(aes(x = library, fill = condition)) +
+  geom_bar() +
+  theme_classic() +
+  theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1)) +
+  theme(plot.title = element_text(hjust = 0.5, face = "bold")) +
+  ggtitle("Number of Cells per Library") +
+  xlab("Library") +
+  ylab("Number of Cells") 
+  # + facet_wrap(~region)
+
+
+print(p_cells_library)
+plots_filter[["p_cells_library"]] <- p_cells_library
+
+rm(p_cells_library)
+```
+### UMI counts distribution
+
+The UMI counts per cell (nCount_RNA) should generally be above 500, that
+is the low end of what we expect. If UMI counts are between 500-1000
+counts, it is usable but the cells probably should have been sequenced
+more deeply.
+
+```{r plot_umi_dist}
+p_UMI_dist <- combined_meta_filter %>%
+  ggplot(aes(x = nCount_RNA, color = library, fill = library)) +
+  geom_density(alpha = 0.15) +
+  scale_x_log10() +
+  geom_vline(xintercept = QC_MIN_COUNTS, linetype = "dashed", color = "red") +
+  geom_vline(xintercept = QC_MAX_COUNTS, linetype = "dashed", color = "red") +
+  theme_classic(base_size = 10) +
+  theme(legend.position = "none") +
+  facet_wrap(~region, ncol = 2) +
+  labs(title = "UMI distribution per library (filter)",
+       x = "nCount_RNA (log10)", y = "Density")
+
+print(p_UMI_dist)
+plots_filter[["p_UMI_dist"]] <- p_UMI_dist
+
+rm(p_UMI_dist)
+```
+
+### Genes detected per cell
+We have similar expectations for gene detection as for UMI detection,
+although it may be a bit lower than UMIs. For high quality data, the
+proportional histogram should contain a single large peak that
+represents cells that were encapsulated. If we see a small shoulder to
+the right of the major peak (not present in our data), or a bimodal
+distribution of the cells, that can indicate a couple of things. It
+might be that there are a set of cells that failed for some reason. It
+could also be that there are biologically different types of cells (i.e.
+quiescent cell populations, less complex cells of interest), and/or one
+type is much smaller than the other (i.e. cells with high counts may be
+cells that are larger in size). Therefore, this threshold should be
+assessed with other metrics that we describe in this lesson.
+
+```{r plot_genes_dis}
+p_genes_dist <-  combined_meta_filter %>%
+  ggplot(aes(x = nFeature_RNA, color = library, fill = library)) +
+  geom_density(alpha = 0.15) +
+  scale_x_log10() +
+  geom_vline(xintercept = QC_MIN_COUNTS, linetype = "dashed", color = "red") +
+  geom_vline(xintercept = QC_MAX_COUNTS, linetype = "dashed", color = "red") +
+  theme_classic(base_size = 10) +
+  theme(legend.position = "none") +
+  facet_wrap(~region, ncol = 2) +
+  labs(title = "Distribution of number of genes (filter)",
+       x = "nFeature_RNA", y = "Density")
+
+
+print(p_genes_dist)
+plots_filter[["p_genes_dist"]] <- p_genes_dist
+
+rm(p_genes_dist)
+```
+
+
+### Mitochondrial percentage
+
+This metric can identify whether there is a large amount of
+mitochondrial contamination from dead or dying cells. We define poor
+quality samples for mitochondrial counts as cells which surpass the 0.2
+mitochondrial ratio mark, unless of course you are expecting this in
+your sample.
+
+
+```{r plot_mt_dist}
+p_mt_dist <- combined_meta_filter %>%
+  dplyr::filter(percent.MT<=5) %>%  # Filter out extreme outliers for better visualization)
+  ggplot(aes(x = percent.MT, color = library, fill = library)) +
+  geom_density(alpha = 0.15) +
+  geom_vline(xintercept = QC_MAX_MT, linetype = "dashed", color = "red") +
+  theme_classic(base_size = 10) +
+  theme(legend.position = "none") +
+  facet_wrap(~region, ncol = 2) +
+  labs(title = paste0("Mitochondrial % (filter) | threshold = ", QC_MAX_MT, "%"),
+       x = "% Mitochondrial reads", y = "Density")
+print(p_mt_dist)
+plots_filter[["p_mt_dist"]] <- p_mt_dist
+
+rm(p_mt_dist)
+```
+
+
+### UMIs vs. genes detected (coloured by MT%)
+
+Two metrics that are often evaluated together are the number of UMIs and
+the number of genes detected per cell. Here, we have plotted the number
+of genes versus the numnber of UMIs coloured by the fraction of
+mitochondrial reads. Mitochondrial read fractions are only high (light
+blue color) in particularly low count cells with few detected genes.
+This could be indicative of damaged/dying cells whose cytoplasmic mRNA
+has leaked out through a broken membrane, and thus, only mRNA located in
+the mitochondria is still conserved. These cells are filtered out by our
+count and gene number thresholds. Jointly visualizing the count and gene
+thresholds shows the joint filtering effect.
+
+Cells that are poor quality are likely to have low genes and UMIs per
+cell, and correspond to the data points in the bottom left quadrant of
+the plot. Good cells will generally exhibit both higher number of genes
+per cell and higher numbers of UMIs.
+
+With this plot we also evaluate the slope of the line, and any scatter
+of data points in the bottom right hand quadrant of the plot. These
+cells have a high number of UMIs but only a few number of genes. These
+could be dying cells, but also could represent a population of a low
+complexity celltype (i.e red blood cells).
+
+```{r plot_umi_vs_genes}
+p_umi_vs_genes <- combined_meta_filter %>%
+  ggplot(aes(x = nCount_RNA, y = nFeature_RNA, color = percent.MT)) +
+  geom_point(size = 0.3, alpha = 0.5) +
+  scale_colour_gradient(low = "grey90", high = "red") +
+  scale_x_log10() + scale_y_log10() +
+  geom_vline(xintercept = QC_MIN_COUNTS, linetype = "dashed") +
+  geom_hline(yintercept = QC_MIN_FEATURES, linetype = "dashed") +
+  facet_wrap(~region, ncol = 2) +
+  theme_classic(base_size = 9) +
+  labs(title = "UMIs vs Genes per cell (filter, 50k sample)",
+       x = "nCount_RNA (log10)", y = "nFeature_RNA (log10)")
+print(p_umi_vs_genes)
+plots_filter[["p_umi_vs_genes"]] <- p_umi_vs_genes
+
+rm(p_umi_vs_genes)
+```
+
+
+### Complexity (log10 Genes per UMI)
+
+
+We can see the samples where we sequenced each cell less have a higher
+overall complexity, that is because we have not started saturating the
+sequencing for any given gene for these samples. Outlier cells in these
+samples might be cells that have a less complex RNA species than other
+cells. Sometimes we can detect contamination with low complexity cell
+types like red blood cells via this metric. Generally, we expect the
+novelty score to be above 0.80.
+
+```{r plot_complexity}
+p_complexity <- combined_meta_filter %>%
+  ggplot(aes(x = log10GenesPerUMI, color = library, fill = library)) +
+  geom_density(alpha = 0.15) +
+  geom_vline(xintercept = QC_MIN_COMPLEXITY, linetype = "dashed", color = "red") +
+  theme_classic(base_size = 10) +
+  theme(legend.position = "none") +
+  facet_wrap(~region, ncol = 2) +
+  labs(title = "Transcriptome complexity (filter)",
+       x = "log10(Genes / UMI)", y = "Density")
+
+print(p_complexity)
+
+plots_filter[["p_complexity"]] <- p_complexity
+
+rm(p_complexity)
+```
+
+```{r}
+base::saveRDS(plots_filter, file.path(output_path, "RData", "QC_plots_filter.rds"))
+plots_filter <- readRDS(paste0(output_path,"RData/QC_plots_filter.rds"))
+
+rm(combined_meta_filter)
+gc()
+```
+
+## Plots QC
+
+### Cells per library
+```{r}
+cells_library_plot <- plots_prefilter[["p_cells_library"]] + plots_filter[["p_cells_library"]] +
+  plot_annotation(title = "Cells per library (pre vs post filter)",
+                  theme = theme(plot.title = element_text(hjust = 0.5, face = "bold")),
+                  tag_levels = "A")
+print(cells_library_plot)
+save_plot("cells_per_library_prefilter_vs_filter", cells_library_plot)
+```
+
+### UMI counts distribution
+```{r}
+umi_counts_plot <- plots_prefilter[["p_UMI_dist"]] + plots_filter[["p_UMI_dist"]]+
+  plot_annotation(title = "UMI counts distribution (pre vs post filter)",
+                  theme = theme(plot.title = element_text(hjust = 0.5, face = "bold")),
+                  tag_levels = "A")
+print(umi_counts_plot)
+save_plot("UMI_counts_distribution_per_library_prefilter_vs_filter", umi_counts_plot)
+```
+
+### Genes detected per cell
+```{r}
+genes_detected_plot <- plots_prefilter[["p_genes_dist"]] + plots_filter[["p_genes_dist"]] +
+  plot_annotation(title = "Genes detected per cell (pre vs post filter)",
+                  theme = theme(plot.title = element_text(hjust = 0.5, face = "bold")),
+                  tag_levels = "A")
+print(genes_detected_plot)
+save_plot("Genes_detected_per_cell_prefilter_vs_filter", genes_detected_plot)
+```
+
+### Mitochondrial percentage
+```{r}
+mitochondrial_plot <- plots_prefilter[["p_mt_dist"]] + plots_filter[["p_mt_dist"]] +
+  plot_annotation(title = "Mitochondrial percentage (pre vs post filter)",
+                  theme = theme(plot.title = element_text(hjust = 0.5, face = "bold")),
+                  tag_levels = "A")
+print(mitochondrial_plot)
+save_plot("mitochondrial_percentage_per_library_prefilter_vs_filter", mitochondrial_plot)
+```
+
+### UMIs vs. genes detected (coloured by MT%)
+```{r}
+umi_vs_genes_plot <- plots_prefilter[["p_umi_vs_genes"]] + plots_filter[["p_umi_vs_genes"]] +
+  plot_annotation(title = "UMI counts vs. genes detected (pre vs post filter)",
+                  theme = theme(plot.title = element_text(hjust = 0.5, face = "bold")),
+                  tag_levels = "A")
+print(umi_vs_genes_plot)
+save_plot("UMI_counts_vs_genes_detected_per_library_prefilter_vs_filter", umi_vs_genes_plot)
+```
+
+### Complexity (log10 Genes per UMI)
+```{r}
+complexity_plot <- plots_prefilter[["p_complexity"]] + plots_filter[["p_complexity"]] +
+  plot_annotation(title = "Complexity (pre vs post filter)",
+                  theme = theme(plot.title = element_text(hjust = 0.5, face = "bold")),
+                  tag_levels = "A")
+print(complexity_plot)
+save_plot("Complexity_per_library_prefilter_vs_filter", complexity_plot)
+```
+
+```{r}
+rm(plots_filter, plots_prefilter)
+gc()
+```
+
+
+
+
 
