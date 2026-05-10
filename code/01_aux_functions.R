@@ -61,3 +61,14 @@ save_plot <- function(plotname, plot, width = 8, height = 6, subdir = "") {
     }
   )
 }
+
+
+
+# Free RAM #####
+
+#' Get current RAM usage in MB (rounded)
+#' Note: This is a simple approximation based on gc() output and may not reflect total RAM usage of the R session.
+#' For more accurate monitoring, consider using the 'pryr' package or system tools.
+#' @returns RAM usage in MB (numeric)
+#' @examples
+ram_mb <- function() round(sum(gc(verbose = FALSE)[, 2]), 0)

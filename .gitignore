@@ -12,7 +12,7 @@ logs/
 # Pipeline outputs (figures, Seurat objects, tables)
 output/
 rmds/output
-
+rmds/logs
 
 # renv package library (reconstruct from renv.lock)
 renv/

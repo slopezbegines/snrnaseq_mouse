@@ -61,7 +61,9 @@ cran_packages <- c(
   # Utilities
   "tictoc", "remotes", "future", "future.apply",
   # Clustering diagnostics
-  "clustree"
+  "clustree",
+  # Counting time
+  "tictoc"
 )
 
 load_pkgs(cran_packages)
@@ -118,6 +120,6 @@ cat("SeuratDisk available:", requireNamespace("SeuratDisk", quietly = TRUE), "\n
 cat("SeuratWrappers available:", requireNamespace("SeuratWrappers", quietly = TRUE), "\n")
 
 # Clean environment
-rm(check_sysreqs, load_pkgs, cran_packages, bioc_packages, gh_packages, gh_names)
+rm(check_sysreqs, load_pkgs, cran_packages, bioc_packages, gh_packages)
 
 # renv::snapshot(type = "all") # Uncomment to save package versions to renv.lock
