@@ -2,13 +2,13 @@
 .Rhistory
 .RData
 .Ruserdata
-.Rprofile
 r_session.RDataTmp
 # Raw sequencing data (10X CellRanger outputs, ~70 GB)
 rawdata/
 code_claude/
 code/old/
 logs/
+non-used-code/
 # Pipeline outputs (figures, Seurat objects, tables)
 output/
 rmds/output

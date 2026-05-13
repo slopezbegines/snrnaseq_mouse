@@ -51,11 +51,11 @@ message("[PACKAGES] Loading CRAN packages...")
 
 cran_packages <- c(
   # Single-cell core (CRAN)
-  "Seurat", "SeuratObject",
+  "Seurat", "SeuratObject", "Signac",
   # Core data manipulation
   "dplyr", "tidyr", "tibble", "stringr", "purrr", "data.table",
   # Visualization
-  "ggplot2", "patchwork", "ggrepel", "scales",
+  "ggplot2", "patchwork", "ggrepel", "scales",  "scCustomize",
   # I/O
   "readxl", "writexl",
   # Utilities
@@ -63,7 +63,9 @@ cran_packages <- c(
   # Clustering diagnostics
   "clustree",
   # Counting time
-  "tictoc"
+  "tictoc",
+  # Harmony integration
+  "harmony"
 )
 
 load_pkgs(cran_packages)
@@ -89,24 +91,35 @@ bioc_packages <- paste0("bioc::", c(
 load_pkgs(bioc_packages)
 
 # =============================================================================
-# GitHub packages
+# GitHub / r-universe packages
+# names  = bare package name used by requireNamespace() and library()
+# values = pak installation spec (user/repo or URL::pkg)
 # =============================================================================
+message("[PACKAGES] Loading GitHub packages...")
 
-# pkg names as installed (for requireNamespace check)
-gh_packages <- c("DoubletFinder", "SeuratDisk", "SeuratData", "SeuratWrappers")
+gh_packages <- c(
+  "DoubletFinder"  = "chris-mcginnis-ucsf/DoubletFinder",
+  "SeuratDisk"     = "mojaveazure/seurat-disk",
+  "SeuratData"     = "satijalab/seurat-data",
+  "SeuratWrappers" = "satijalab/seurat-wrappers",
+  "BPCells"        = "bnprks/BPCells",
+  "presto"         = "immunogenomics/presto"
+)
 
-for (i in seq_along(gh_packages)) {
-  if (!requireNamespace(gh_packages[i], quietly = TRUE)) {
-    message("[INSTALL] Installing from GitHub: ", gh_packages[i])
-    pak::pkg_install(gh_packages[i], ask = FALSE, upgrade = FALSE)
+for (pkg_name in names(gh_packages)) {
+  pkg_spec <- gh_packages[[pkg_name]]
+  if (!requireNamespace(pkg_name, quietly = TRUE)) {
+    message("[INSTALL] Installing from GitHub: ", pkg_spec)
+    pak::pkg_install(pkg_spec, ask = FALSE, upgrade = FALSE)
   }
-  if (requireNamespace(gh_packages[i], quietly = TRUE)) {
+  if (requireNamespace(pkg_name, quietly = TRUE)) {
     suppressPackageStartupMessages(suppressWarnings(
-      library(gh_packages[i], character.only = TRUE, warn.conflicts = FALSE, quietly = TRUE)
+      library(pkg_name, character.only = TRUE, warn.conflicts = FALSE, quietly = TRUE)
     ))
   }
 }
-
+#  remotes::install_github("satijalab/azimuth", ref = "master")
+# devtools::install_github("satijalab/AzimuthAPI")
 # =============================================================================
 # Session info
 # =============================================================================
@@ -117,9 +130,10 @@ cat("SingleR version:", as.character(packageVersion("SingleR")), "\n")
 cat("DoubletFinder loaded:", requireNamespace("DoubletFinder", quietly = TRUE), "\n")
 cat("glmGamPoi available:", requireNamespace("glmGamPoi", quietly = TRUE), "\n")
 cat("SeuratDisk available:", requireNamespace("SeuratDisk", quietly = TRUE), "\n")
+cat("BPCells available:", requireNamespace("BPCells", quietly = TRUE), "\n")
 cat("SeuratWrappers available:", requireNamespace("SeuratWrappers", quietly = TRUE), "\n")
 
 # Clean environment
-rm(check_sysreqs, load_pkgs, cran_packages, bioc_packages, gh_packages)
+rm(check_sysreqs, load_pkgs, cran_packages, bioc_packages, gh_packages, pkg_spec, pkg_name)
 
 # renv::snapshot(type = "all") # Uncomment to save package versions to renv.lock

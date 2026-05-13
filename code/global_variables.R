@@ -75,7 +75,7 @@ create_directories <- function(base_path) {
     "figures/proportions/"
   )
   for (subdir in dirs) {
-    path <- paste0(base_path, subdir)
+    path <- file.path(base_path, subdir)
     if (!dir.exists(path)) {
       dir.create(path, recursive = TRUE, showWarnings = FALSE)
       message("  [DIR] Created: ", path)

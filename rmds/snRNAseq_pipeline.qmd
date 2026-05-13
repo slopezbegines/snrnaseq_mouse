@@ -29,7 +29,7 @@ gc()              # Release memory
 
 # --- Global parameters --------------------------------------------------------
 image_number <- 1
-output_path  <- "output/GSE262881/SCT/"
+output_path  <- "output/GSE262881/SCT"
 
 # Data paths
 DATA_DIR  <- "../rawdata/GSE262881_RAW"
@@ -54,7 +54,7 @@ plan("sequential") # Sequential to save RAM
 #| warning: false  
 # renv::restore()  # Uncomment to restore packages from renv.lock
 source("../code/00_packages.R")
-# renv::snapshot()  # Snapshot current package state to renv.lock (uncomment if changes made
+# renv::snapshot()  # Snapshot current package state to renv.lock (uncomment if changes made)
 ```
 
 
@@ -65,7 +65,7 @@ source("../code/02_sc_functions.R")
 ```
 
 
-# Input data
+# 1. Input data
 
 **Dataset:** GSE262881 — Wang et al., BMC Biology (2025) 23:124  
 **Paper:** A single-cell transcriptomic atlas of all cell types in the brain of 5xFAD Alzheimer mice in response to dietary inulin supplementation
@@ -109,10 +109,13 @@ Each library is read and saved individuallyto avoid holding all count matrices i
   #seurat_list <- load_h5_samples(data_path, checkpoint = "01_raw_data")      
 
 # Only desired region, with checkpoint
- seurat_list <- load_h5_samples(DATA_DIR, regions = "forebrain", checkpoint = "01_raw_data")
-gc()          
-     
+ # seurat_list <- load_h5_samples(DATA_DIR, regions = "forebrain", checkpoint = "01_raw_data")
+# Use BPCells library for high efficiency, with checkpoint
+seurat_list <- load_h5_samples_bpcells(data_path = DATA_DIR, regions = "forebrain", checkpoint = "01_raw_data_bp", specie = "mouse")
+
+gc()
 ```
+
 
 ## Import summary
 
@@ -137,13 +140,17 @@ Key difference from mouse data: mitochondrial genes use **`^MT-`** (uppercase).
 if (check_checkpoint("02_seurat_qc")) {
   seurat_qc <- load_checkpoint("02_seurat_qc")
 } else {
-  #seurat_raw <- load_checkpoint("01_raw_seurat")
-  seurat_qc <- lapply(seurat_list, function (x){
-    add_qc_metrics(x, pattern_mito = mito_pattern , pattern_ribo = ribo_pattern)})
-  rm(seurat_list) 
-  gc()
-  save_checkpoint(seurat_qc, "02_seurat_qc")
-}
+    if (!exists("seurat_list"))
+      seurat_list <- load_checkpoint("01_raw_data_bp")
+    seurat_qc <- lapply(seurat_list, function(x) {
+      add_qc_metrics(x, pattern_mito = mito_pattern, pattern_ribo = ribo_pattern)
+    })
+    rm(seurat_list)
+    gc()
+    save_checkpoint(seurat_qc, "02_seurat_qc")
+  }
+
+
 ```
 ## Pre-filter QC overview (combined across all libraries)
 ```{r qc_combined_meta}
@@ -153,9 +160,106 @@ cat("Libraries:", length(unique(combined_meta_prefilter$library)), "\n")
 
 # Save metadata_prefilter for downstream use
 save_checkpoint(combined_meta_prefilter, "03_qc_combined_meta_prefilter")
-
+#load_checkpoint("03_qc_combined_meta_prefilter") # Load to free up RAM from seurat_qc)
 plots_prefilter <- list()  # Initialize list to store pre-filter QC plots
 plots_filter <- list()     # Initialize list to store post-filter QC plots
+```
+
+### Distribution of features
+#### nCount_RNA distribution per library (pre-filter)
+```{r}
+ncount_rna_prefilter <- ggplot(combined_meta_prefilter) +
+  aes(x = "", y = nCount_RNA, fill = library) +
+  geom_violin(adjust = 1L) +
+  geom_jitter(alpha = 0.01, size=0.02) +
+  scale_fill_hue(direction = 1) +
+  ggthemes::theme_few() +
+  facet_wrap(vars(library))+
+  #remove legend
+  theme(legend.position = "none") +
+  labs(x = "", y = "nCount_RNA")
+
+print(ncount_rna_prefilter)
+plots_prefilter[["ncount_rna_prefilter"]] <- ncount_rna_prefilter
+
+rm(ncount_rna_prefilter)
+
+```
+#### nFeature_RNA distribution per library (pre-filter)
+```{r}
+nFeature_RNA_prefilter <- ggplot(combined_meta_prefilter) +
+  aes(x = "", y = nFeature_RNA, fill = library) +
+  geom_violin(adjust = 1L) +
+  geom_jitter(alpha = 0.01, size=0.02) +
+  scale_fill_hue(direction = 1) +
+  ggthemes::theme_few() +
+  facet_wrap(vars(library))+
+  #remove legend
+  theme(legend.position = "none") +
+  labs(x = "", y = "nFeature_RNA")
+
+print(nFeature_RNA_prefilter)
+plots_prefilter[["nFeature_RNA_prefilter"]] <- nFeature_RNA_prefilter
+
+rm(nFeature_RNA_prefilter)
+
+```
+#### percent.MT distribution per library (pre-filter)
+```{r}
+percent.MT_prefilter <- ggplot(combined_meta_prefilter) +
+  aes(x = "", y = percent.MT, fill = library) +
+  geom_violin(adjust = 1L) +
+  geom_jitter(alpha = 0.01, size=0.02) +
+  scale_fill_hue(direction = 1) +
+  ggthemes::theme_few() +
+  facet_wrap(vars(library))+
+  #remove legend
+  theme(legend.position = "none") +
+  labs(x = "", y = "percent.MT")
+
+print(percent.MT_prefilter)
+plots_prefilter[["percent.MT_prefilter"]] <- percent.MT_prefilter
+
+rm(percent.MT_prefilter)
+
+```
+#### log10GenesPerUMI distribution per library (pre-filter)
+```{r}
+log10GenesPerUMI_prefilter <- ggplot(combined_meta_prefilter) +
+  aes(x = "", y = log10GenesPerUMI, fill = library) +
+  geom_violin(adjust = 1L) +
+  geom_jitter(alpha = 0.01, size=0.02) +
+  scale_fill_hue(direction = 1) +
+  ggthemes::theme_few() +
+  facet_wrap(vars(library))+
+  #remove legend
+  theme(legend.position = "none") +
+  labs(x = "", y = "log10GenesPerUMI")
+
+print(log10GenesPerUMI_prefilter)
+plots_prefilter[["log10GenesPerUMI_prefilter"]] <- log10GenesPerUMI_prefilter
+
+rm(log10GenesPerUMI_prefilter)
+
+```
+#### percent.Ribo distribution per library (pre-filter)
+```{r}
+percent.ribosomal_prefilter <- ggplot(combined_meta_prefilter) +
+  aes(x = "", y = percent.ribosomal, fill = library) +
+  geom_violin(adjust = 1L) +
+  geom_jitter(alpha = 0.01, size=0.02) +
+  scale_fill_hue(direction = 1) +
+  ggthemes::theme_few() +
+  facet_wrap(vars(library))+
+  #remove legend
+  theme(legend.position = "none") +
+  labs(x = "", y = "percent.ribosomal")
+
+print(percent.ribosomal_prefilter)
+plots_prefilter[["percent.ribosomal_prefilter"]] <- percent.ribosomal_prefilter
+
+rm(percent.ribosomal_prefilter)
+
 ```
 
 ### Cells per library
@@ -348,11 +452,6 @@ gc()
 
 # 3. Cell Filtering
 
-```{r results='asis', echo=FALSE}                                                                               
-cat(readLines("../code/03_filter_cells_low_ram.md"), sep="\n")                                               
-```                                                                                                               
-   
-
 Three-layer filtering strategy:
 
 1. **Demuxlet singlet filter** — Remove barcodes classified as doublets
@@ -374,7 +473,7 @@ cat("Maximum % mitochondrial reads:", QC_MAX_MT,"\n\n" )
 if (check_checkpoint("03_seurat_filtered")) {
   seurat_filtered <- load_checkpoint("03_seurat_filtered")
 } else {
-  libs_dir <- paste0(output_path, "RData/filtered_libs/")
+  libs_dir <- file.path(output_path, "RData/filtered_libs/")
   dir.create(libs_dir, recursive = TRUE, showWarnings = FALSE)
 
   seurat_qc  <- load_checkpoint("02_seurat_qc")
@@ -461,7 +560,8 @@ resume_filtered <- left_join(import_tbl, import_filtered, by = "Library") %>%
   mutate(Retained.pct = N_Cells_PostFilter/N_Cells_PreFilter*100)
 
 print(resume_filtered)
-
+# Save table
+save_table(resume_filtered, "QC_summary_cell_retention", subdir = "QC/")
 rm(import_filtered, import_tbl, resume_filtered)
 ```
 
@@ -473,6 +573,104 @@ cat("Libraries:", length(unique(combined_meta_filter$library)), "\n")
 # Save metadata_prefilter for downstream use
 save_checkpoint(combined_meta_filter, "05_qc_combined_meta_filter")
 ```
+
+### Distribution of features
+#### nCount_RNA distribution per library (filter)
+```{r}
+ncount_rna_filter <- ggplot(combined_meta_filter) +
+  aes(x = "", y = nCount_RNA, fill = library) +
+  geom_violin(adjust = 1L) +
+  geom_jitter(alpha = 0.01, size=0.02) +
+  scale_fill_hue(direction = 1) +
+  ggthemes::theme_few() +
+  facet_wrap(vars(library))+
+  #remove legend
+  theme(legend.position = "none") +
+  labs(x = "", y = "nCount_RNA")
+
+print(ncount_rna_filter)
+plots_filter[["ncount_rna_filter"]] <- ncount_rna_filter
+
+rm(ncount_rna_filter)
+
+```
+#### nFeature_RNA distribution per library (filter)
+```{r}
+nFeature_RNA_filter <- ggplot(combined_meta_filter) +
+  aes(x = "", y = nFeature_RNA, fill = library) +
+  geom_violin(adjust = 1L) +
+  geom_jitter(alpha = 0.01, size=0.02) +
+  scale_fill_hue(direction = 1) +
+  ggthemes::theme_few() +
+  facet_wrap(vars(library))+
+  #remove legend
+  theme(legend.position = "none") +
+  labs(x = "", y = "nFeature_RNA")
+
+print(nFeature_RNA_filter)
+plots_filter[["nFeature_RNA_filter"]] <- nFeature_RNA_filter
+
+rm(nFeature_RNA_filter)
+
+```
+#### percent.MT distribution per library (filter)
+```{r}
+percent.MT_filter <- ggplot(combined_meta_filter) +
+  aes(x = "", y = percent.MT, fill = library) +
+  geom_violin(adjust = 1L) +
+  geom_jitter(alpha = 0.01, size=0.02) +
+  scale_fill_hue(direction = 1) +
+  ggthemes::theme_few() +
+  facet_wrap(vars(library))+
+  #remove legend
+  theme(legend.position = "none") +
+  labs(x = "", y = "percent.MT")
+
+print(percent.MT_filter)
+plots_filter[["percent.MT_filter"]] <- percent.MT_filter
+
+rm(percent.MT_filter)
+
+```
+#### log10GenesPerUMI distribution per library (filter)
+```{r}
+log10GenesPerUMI_filter <- ggplot(combined_meta_filter) +
+  aes(x = "", y = log10GenesPerUMI, fill = library) +
+  geom_violin(adjust = 1L) +
+  geom_jitter(alpha = 0.01, size=0.02) +
+  scale_fill_hue(direction = 1) +
+  ggthemes::theme_few() +
+  facet_wrap(vars(library))+
+  #remove legend
+  theme(legend.position = "none") +
+  labs(x = "", y = "log10GenesPerUMI")
+
+print(log10GenesPerUMI_filter)
+plots_filter[["log10GenesPerUMI_filter"]] <- log10GenesPerUMI_filter
+
+rm(log10GenesPerUMI_filter)
+
+```
+#### percent.Ribo distribution per library (filter)
+```{r}
+percent.ribosomal_filter <- ggplot(combined_meta_filter) +
+  aes(x = "", y = percent.ribosomal, fill = library) +
+  geom_violin(adjust = 1L) +
+  geom_jitter(alpha = 0.01, size=0.02) +
+  scale_fill_hue(direction = 1) +
+  ggthemes::theme_few() +
+  facet_wrap(vars(library))+
+  #remove legend
+  theme(legend.position = "none") +
+  labs(x = "", y = "percent.ribosomal")
+
+print(percent.ribosomal_filter)
+plots_filter[["percent.ribosomal_filter"]] <- percent.ribosomal_filter
+
+rm(percent.ribosomal_filter)
+
+```
+
 
 ### Cells per library
 
@@ -663,6 +861,68 @@ gc()
 ```
 
 ## Plots QC
+### Distribution of features (pre vs post filter)
+#### nCount_RNA distribution per library (pre vs post filter)
+```{r}
+nCount_RNA_plot <- plots_prefilter[["ncount_rna_prefilter"]] + plots_filter[["ncount_rna_filter"]] +
+  plot_annotation(title = "nCount_RNA per library (pre vs post filter)",
+                  theme = theme(plot.title = element_text(hjust = 0.5, face = "bold")),
+                  tag_levels = "A")
+print(nCount_RNA_plot)
+save_plot("nCount_RNA_per_library_prefilter_vs_filter", nCount_RNA_plot, subdir = "QC/")
+rm(nCount_RNA_plot)
+```
+
+
+#### nFeature_RNA distribution per library (pre vs post filter)
+```{r}
+nFeature_RNA_plot <- plots_prefilter[["nFeature_RNA_prefilter"]] + plots_filter[["nFeature_RNA_filter"]] +
+  plot_annotation(title = "nFeature_RNA per library (pre vs post filter)",
+                  theme = theme(plot.title = element_text(hjust = 0.5, face = "bold")),
+                  tag_levels = "A")
+print(nFeature_RNA_plot)
+save_plot("nFeature_RNA_per_library_prefilter_vs_filter", nFeature_RNA_plot, subdir = "QC/")
+rm(nFeature_RNA_plot)
+```
+
+
+#### percent.MT distribution per library (pre vs post filter)
+```{r}
+percent.MT_plot <- plots_prefilter[["percent.MT_prefilter"]] + plots_filter[["percent.MT_filter"]] +
+  plot_annotation(title = "Mitochondrial % per library (pre vs post filter)",
+                  theme = theme(plot.title = element_text(hjust = 0.5, face = "bold")),
+                  tag_levels = "A")
+print(percent.MT_plot)
+save_plot("percent.MT_plot_per_library_prefilter_vs_filter", percent.MT_plot, subdir = "QC/")
+rm(percent.MT_plot)
+```
+
+
+#### log10GenesPerUMI distribution per library (pre vs post filter)
+```{r}
+log10GenesPerUMI_plot <- plots_prefilter[["log10GenesPerUMI_prefilter"]] + plots_filter[["log10GenesPerUMI_filter"]] +
+  plot_annotation(title = "log10GenesPerUMI per library (pre vs post filter)",
+                  theme = theme(plot.title = element_text(hjust = 0.5, face = "bold")),
+                  tag_levels = "A")
+print(log10GenesPerUMI_plot)
+save_plot("log10GenesPerUMI_per_library_prefilter_vs_filter", log10GenesPerUMI_plot, subdir = "QC/")
+rm(log10GenesPerUMI_plot)
+```
+
+
+#### percent.Ribo distribution per library (pre vs post filter)
+
+```{r}
+percent.ribosomal_plot <- plots_prefilter[["percent.ribosomal_prefilter"]] + plots_filter[["percent.ribosomal_filter"]] +
+  plot_annotation(title = "Ribosomal % per library (pre vs post filter)",
+                  theme = theme(plot.title = element_text(hjust = 0.5, face = "bold")),
+                  tag_levels = "A")
+print(percent.ribosomal_plot)
+save_plot("percent.ribosomal_plot_library_prefilter_vs_filter", percent.ribosomal_plot, subdir = "QC/")
+rm(percent.ribosomal_plot)
+```
+
+
 
 ### Cells per library
 ```{r}
@@ -745,248 +1005,24 @@ inter-sample doublets; DoubletFinder catches intra-sample technical doublets.
 > within 16 GB RAM. Each library is unloaded after processing.
 
 ```{r doubletfinder, message=TRUE}
+message("[DOUBLETS] Running scDblFinder per sample...")
 # Run DoubletFinder on each library (checkpoint per library)
-df_results <- lapply(names(seurat_filtered), function(lib_name) {
-  run_doubletfinder(seurat_filtered[[lib_name]], lib_name, output_path)
-})
-names(df_results) <- names(seurat_filtered)
-```
+#df_results <- lapply(names(seurat_filtered), function(lib_name) {
+#  run_doubletfinder_bp(seurat_filtered[[lib_name]], lib_name, output_path)
+#})
+#names(df_results) <- names(seurat_filtered)
 
+# Run DoubletFinder on each library (checkpoint per library). Using BPCells matrixs for faster processing.
+  df_results  <- lapply(names(seurat_filtered), function(nm)
+                   run_doubletfinder_bp(seurat_filtered[[nm]], nm, output_path))
+  names(df_results) <- names(seurat_filtered)
 
-## Attach doublet labels and filter
-
-```{r attach_doublets}
-if (check_checkpoint("04_seurat_singlets")) {
-  seurat_singlets <- load_checkpoint("06_seurat_singlets")
-} else {
-  seurat_singlets <- lapply(names(seurat_filtered), function(lib_name) {
-    obj    <- seurat_filtered[[lib_name]]
-    df_res <- df_results[[lib_name]]
-
-    # Align by barcode
-    barcodes <- colnames(obj)
-    obj$df_classification <- df_res$df_classification[match(barcodes, df_res$barcode)]
-    obj$pANN              <- df_res$pANN[match(barcodes, df_res$barcode)]
-
-    # Keep only singlets
-    n_before <- ncol(obj)
-    obj <- subset(obj, subset = df_classification == "Singlet")
-    n_after  <- ncol(obj)
-
-    message(sprintf("[DF] %s: removed %d doublets (%.1f%%)",
-                    lib_name, n_before - n_after,
-                    (n_before - n_after) / n_before * 100))
-    obj
-  })
-  names(seurat_singlets) <- names(seurat_filtered)
-  rm(seurat_filtered, df_results); gc()
-  save_checkpoint(seurat_singlets, "06_seurat_singlets")
-}
-
-cat("Cells after doublet removal:", sum(sapply(seurat_singlets, ncol)), "\n")
-```
-
-
-# 5. SCTransform Normalization & integration
-
-Run 06_integration.R.
-```{r}
-source("../code/06_integration.R")
-```
-
-
-SCTransform v2 with `glmGamPoi` is run **one library at a time** to limit peak
-RAM usage. PCA is run immediately after SCT (required for RPCA integration).
-Each result is saved to `RData/sct_objects/` before the next library starts.
-
-> **Crash recovery:** If the session crashes mid-loop, completed libraries have
-> `.rds` checkpoints. Restart from this chunk; completed libraries are skipped.
-
-```{r sct_normalize, message=TRUE}
-sct_dir <- paste0(output_path, "RData/sct_objects/")
-dir.create(sct_dir, recursive = TRUE, showWarnings = FALSE)
-
-# Run SCT per library (sequential; saves memory)
-plan("sequential")
-options(future.globals.maxSize = FUTURE_GLOBALS_MAX_MB * 1024^2)
-```
-
-Re-run next chunck library by library with script `05_sct_normalize.R` with bash.
-
-```{r sct_normalize, message=TRUE}
-for (lib_name in names(seurat_singlets)) {
-  sct_file <- paste0(sct_dir, "sct_", lib_name, ".rds")
-
-  if (file.exists(sct_file)) {
-    message(sprintf("[SCT] Skipping (checkpoint exists): %s", lib_name))
-    next
-  }
-
-  message(sprintf("[SCT] Running: %s  (%d cells)  [%s]",
-                  lib_name, ncol(seurat_singlets[[lib_name]]),
-                  format(Sys.time(), "%H:%M:%S")))
-  tic()
-
-  obj <- seurat_singlets[[lib_name]]
-
-  # SCTransform v2: regularized negative binomial regression
-  # Regresses out mitochondrial percentage to remove technical variation
-  # glmGamPoi method: ~10x faster than default Poisson on large datasets
-  obj <- SCTransform(
-    obj,
-    vst.flavor      = "v2",
-    method          = "glmGamPoi",
-    vars.to.regress = "percent.MT",
-    verbose         = FALSE
-  )
-
-  # PCA on SCT features (needed for RPCA-based integration)
-  obj <- RunPCA(
-    obj,
-    features = VariableFeatures(obj),
-    npcs     = N_PCS_MAX,
-    verbose  = FALSE
-  )
-
-  # Atomic save: write to temp first, then rename
-  tmp_file <- paste0(sct_file, ".tmp")
-  saveRDS(obj, file = tmp_file)
-  file.rename(tmp_file, sct_file)
-
-  toc()
-  rm(obj)
+  seurat_singlets <- build_seurat_singlets(seurat_filtered, df_results)
+  rm(seurat_filtered, df_results)
   gc()
-  message(sprintf("[SCT] Saved: %s  [%s]", sct_file, format(Sys.time(), "%H:%M:%S")))
-}
-
-rm(seurat_singlets); gc()
-message("[SCT] All libraries processed.")
-```
-
-# 6. Integration with RPCA
-```{r}
-log_msg("[START] 06_integration.R — log: ", log_file)
-log_msg("[INFO]  output_path = ", output_path)
-
-create_directories(output_path)
-sct_dir <- paste0(output_path, "RData/sct_objects/")
-```
-
-
-```{r}
-# --- Load SCT objects ---------------------------------------------------------
-if (check_checkpoint("07_sct_objects")) {
-  log_msg("[LOAD] checkpoint_07_sct_objects found — loading...")
-  sct_objects <- load_checkpoint("07_sct_objects")
-} else {
-  log_msg("[LOAD] No checkpoint_07 — assembling from individual sct_*.rds in: ", sct_dir)
-  available_sct <- list.files(sct_dir, pattern = "^sct_.*\\.rds$", full.names = FALSE)
-  if (length(available_sct) == 0) {
-    log_msg("[ABORT] No sct_*.rds files found in: ", sct_dir)
-    stop("Cannot proceed: run 05_sct_normalization.sh first.")
-  }
-  lib_names_sct <- sub("^sct_", "", sub("\\.rds$", "", available_sct))
-  log_msg("[LOAD] Found ", length(lib_names_sct), " SCT objects — reading...")
-  sct_objects <- lapply(lib_names_sct, function(nm) {
-    log_msg("  Loading: ", nm)
-    readRDS(paste0(sct_dir, "sct_", nm, ".rds"))
-  })
-  names(sct_objects) <- lib_names_sct
-  gc()
-  log_msg("[RAM] After loading all SCT objects: ", ram_mb(), " MB")
-  save_checkpoint(sct_objects, "07_sct_objects")
-  log_msg("[CHECKPOINT] Saved: checkpoint_07_sct_objects.rds")
-}
-
-log_msg("[OK] SCT objects: ", length(sct_objects), " libraries, ",
-        sum(sapply(sct_objects, ncol)), " total cells")
 
 ```
 
-```{r}
-# --- Integration --------------------------------------------------------------
-  log_msg("[RAM] Before integration: ", ram_mb(), " MB")
-  tic()
-
-  # Reduce integration features for the OOM constraint (15 GB RAM, 113k cells).
-  # 2000 features × 56k cells × float64 = ~850 MB per matrix; IntegrateData()
-  # needs at least two such matrices simultaneously during the final merge.
-  # 1000 features halves that footprint. Restore to N_INTEGRATION_FEATURES once
-  # running on a machine with ≥ 32 GB.
-  integration_features_ram <- min(N_INTEGRATION_FEATURES, 1000L)
-  integration_dims_ram     <- 1:min(N_PCS_INTEGRATION, 10L)
-
-  log_msg("[INTEGRATION] SelectIntegrationFeatures (nfeatures=", integration_features_ram,
-          " [RAM-capped from ", N_INTEGRATION_FEATURES, "])...")
-  features <- SelectIntegrationFeatures(
-    object.list = sct_objects,
-    nfeatures   = integration_features_ram
-  )
-  log_msg("[OK] Features selected: ", length(features))
-  save_checkpoint(features, "08_integration_features")
-
-  log_msg("[INTEGRATION] PrepSCTIntegration...")
-  sct_objects <- PrepSCTIntegration(
-    object.list     = sct_objects,
-    anchor.features = features
-  )
-  log_msg("[RAM] After PrepSCTIntegration: ", ram_mb(), " MB")
-  save_checkpoint(sct_objects, "08_integration_prep_sct")
-  
-  
-  log_msg("[INTEGRATION] FindIntegrationAnchors (RPCA, dims=", paste(range(integration_dims_ram), collapse=":"), ")...")
-  anchors <- FindIntegrationAnchors(
-    object.list          = sct_objects,
-    normalization.method = "SCT",
-    anchor.features      = features,
-    reduction            = "rpca",
-    dims                 = integration_dims_ram,
-    k.anchor             = 5
-  )
-  log_msg("[OK] Anchors found: ", nrow(anchors@anchors))
-  save_checkpoint(anchors, "08_integration_anchors")
-  rm(sct_objects)
-  gc()
-  log_msg("[RAM] After rm(sct_objects): ", ram_mb(), " MB")
-```
 
 
-```{r}
-if (check_checkpoint("08_data_integrated")) {
-  log_msg("[SKIP] checkpoint_08_data_integrated already exists. Delete to re-run.")
-  data_int <- load_checkpoint("08_data_integrated")
-} else {
-  tic()
-  integration_features_ram <- min(N_INTEGRATION_FEATURES, 1000L)
-  integration_dims_ram     <- 1:min(N_PCS_INTEGRATION, 10L)
-  
-  anchors <- load_checkpoint("08_integration_anchors")
-  log_msg("[INTEGRATION] IntegrateData (dims=", paste(range(integration_dims_ram), collapse=":"),
-          ", k.weight=25, features=", integration_features_ram, ")...")
-  data_int <- IntegrateData(
-    anchorset            = anchors,
-    normalization.method = "SCT",
-    dims                 = integration_dims_ram,
-    k.weight             = 25   # reduced from default 100 to halve weight-matrix RAM
-  )
-
-  rm(anchors)
-  gc()
-  log_msg("[RAM] After rm(anchors): ", ram_mb(), " MB")
-
-  elapsed <- toc(quiet = TRUE)
-  log_msg("[TIME] Integration wall time: ", round(elapsed$toc - elapsed$tic, 1), " s")
-
-  save_checkpoint(data_int, "08_data_integrated")
-  log_msg("[CHECKPOINT] Saved: checkpoint_08_data_integrated.rds")
-}
-
-summary_line <- paste0("Integrated object: ", ncol(data_int), " cells x ",
-                       nrow(data_int), " features")
-cat(summary_line, "\n")
-log_msg(summary_line)
-DefaultAssay(data_int) <- "integrated"
-log_msg("[DONE] DefaultAssay set to 'integrated'.")
-message("\n[DONE] Step 06 complete.")
-```
 
