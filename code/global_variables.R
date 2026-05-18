@@ -83,3 +83,4 @@ create_directories <- function(base_path) {
   }
   message("[OK] Directory structure ready at: ", base_path)
 }
+create_directories(output_path) # Ensure directories exist at startup)

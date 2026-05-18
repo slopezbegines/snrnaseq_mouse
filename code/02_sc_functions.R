@@ -453,6 +453,26 @@ build_seurat_singlets <- function(seurat_filtered, df_results) {
   seurat_singlets
 }
 
+## Calculating N PC ####
+# More details at: https://hbctraining.github.io/scRNA-seq/lessons/elbow_plot_metric.html
+# Determine percent of variation associated with each PC
+
+n_pcs <- function(merged) {
+  pct <- merged@reductions[["pca"]]@stdev / sum(merged@reductions[["pca"]]@stdev) * 100
+  # Calculate cumulative percents for each PC
+  cumu <- cumsum(pct)
+  # Determine which PC exhibits cumulative percent greater than 90% and % variation associated with the PC as less than 5
+  co1 <- which(cumu > 90 & pct < 5)[1]
+
+  # Determine the difference between variation of PC and subsequent PC
+  co2 <- sort(which((pct[1:length(pct) - 1] - pct[2:length(pct)]) > 0.1), decreasing = T)[1] + 1
+
+  # Minimum of the two calculation
+  pcs <- min(co1, co2)
+
+  return(pcs)
+}
+
 
 # 4. MERGE ----------------------------------------------------------------
 

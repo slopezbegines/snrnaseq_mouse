@@ -42,19 +42,28 @@ load_checkpoint <- function(name, base = output_path) {
 #' @param plot      A ggplot object
 #' @param width     Width in inches
 #' @param height    Height in inches
-#' @param subdir    Subdirectory under figures/ (e.g. "QC/", "DE/")
+#' @param subdir    Subdirectory under figures (e.g. "QC", "DE")
 save_plot <- function(plotname, plot, width = 8, height = 6, subdir = "") {
-  if (!inherits(plot, c("ggplot", "patchwork", "Heatmap"))) {
-    warning(sprintf("[SAVE_PLOT] '%s' is not a ggplot/patchwork object — skipping.", plotname))
-    return(invisible(NULL))
-  }
   dir <- file.path(output_path, "figures", subdir)
   dir.create(dir, recursive = TRUE, showWarnings = FALSE)
   filename <- paste0(dir,"/",sprintf("%03d", image_number), "_", plotname)
   tryCatch(
     {
-      ggsave(paste0(filename, tiff_extension), plot, width = width, height = height, units = "in", dpi = 300)
-      ggsave(paste0(filename, pdf_extension), plot, width = width, height = height, units = "in")
+      if (inherits(plot, c("ggplot", "patchwork", "Heatmap"))) {
+        ggsave(paste0(filename, tiff_extension), plot, width = width, height = height, units = "in", dpi = 300)
+        ggsave(paste0(filename, pdf_extension), plot, width = width, height = height, units = "in")
+      } else if (is.function(plot)) {
+        # for base-graphics functions that draw directly to the device (e.g. DimHeatmap)
+        tiff(paste0(filename, tiff_extension), width = width, height = height, units = "in", res = 300)
+        plot()
+        dev.off()
+        pdf(paste0(filename, pdf_extension), width = width, height = height)
+        plot()
+        dev.off()
+      } else {
+        warning(sprintf("[SAVE_PLOT] '%s' — unsupported plot type '%s', skipping.", plotname, class(plot)[1]))
+        return(invisible(NULL))
+      }
       image_number <<- image_number + 1
     },
     error = function(e) {
@@ -73,6 +82,8 @@ save_plot <- function(plotname, plot, width = 8, height = 6, subdir = "") {
 #' @returns RAM usage in MB (numeric)
 #' @examples
 ram_mb <- function() round(sum(gc(verbose = FALSE)[, 2]), 0)
+
+# Logging #####
 
 #' Initialize a timestamped log file and return logging utilities
 #' @param script_name  Label used in the log filename (e.g. "05_sct_normalization")

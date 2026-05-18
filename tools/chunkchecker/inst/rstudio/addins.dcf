@@ -1,0 +1,4 @@
+Name: Check R Chunk
+Description: Validate the selected chunk for syntax errors, undefined variables, bad argument names, invalid paths, and missing checkpoints.
+Binding: check_chunk_addin
+Interactive: false

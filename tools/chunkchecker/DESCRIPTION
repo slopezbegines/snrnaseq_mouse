@@ -1,0 +1,14 @@
+Package: chunkchecker
+Title: Static Validator for R Code Chunks
+Version: 0.1.0
+Authors@R: person("Santiago", "Lopez", role = c("aut", "cre"),
+    email = "santiago.lopez.begines@gmail.com")
+Description: RStudio addin that validates a selected R code chunk for
+    syntax errors, undefined variables, bad function argument names,
+    invalid file paths, and missing checkpoint files.
+License: MIT
+Imports:
+    rstudioapi,
+    codetools
+Encoding: UTF-8
+RoxygenNote: 7.0.0
