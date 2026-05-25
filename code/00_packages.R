@@ -55,7 +55,7 @@ cran_packages <- c(
   # Core data manipulation
   "dplyr", "tidyr", "tibble", "stringr", "purrr", "data.table",
   # Visualization
-  "ggplot2", "patchwork", "ggrepel", "scales",  "scCustomize",
+  "ggplot2", "patchwork", "ggrepel", "scales", "scCustomize",
   # I/O
   "readxl", "writexl",
   # Utilities
@@ -65,7 +65,9 @@ cran_packages <- c(
   # Counting time
   "tictoc",
   # Harmony integration
-  "harmony"
+  "harmony",
+  #
+  "scrapper"
 )
 
 load_pkgs(cran_packages)

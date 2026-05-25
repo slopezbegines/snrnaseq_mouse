@@ -12,9 +12,9 @@ tiff_extension <- ".tiff"
 pdf_extension <- ".pdf"
 
 # --- Species / organism -------------------------------------------------------
-species <- 9606 # NCBI Taxonomy ID for Homo sapiens #9606 for Human, 10090 for mouse, 7955 for zebrafish
-organism <- "org.Hs.eg.db" # Bioconductor annotation package #"org.Dr.eg.db". "org.Hs.eg.db"
-kegg_organism <- "hsa" # KEGG organism code for Homo sapiens #dre for Danio rerio, hsa for Homo sapiens, mmu for Mus musculus
+species <- 10090 # NCBI Taxonomy ID for Homo sapiens #9606 for Human, 10090 for mouse, 7955 for zebrafish
+organism <- "org.Ms.eg.db" # Bioconductor annotation package #"org.Dr.eg.db". "org.Hs.eg.db"
+kegg_organism <- "mmu" # KEGG organism code for Homo sapiens #dre for Danio rerio, hsa for Homo sapiens, mmu for Mus musculus
 keyType <- "SYMBOL"
 KEGGkeyType <- "kegg"
 
