@@ -7,11 +7,11 @@
 [![License: Academic](https://img.shields.io/badge/License-Academic%20use-blue.svg)](#license)
 [![Portfolio](https://img.shields.io/badge/Portfolio-Live-8b5cf6.svg)](https://slopezbegines.github.io/projects/single-cell/)
 
-> Modular R pipeline for single-nucleus RNA-seq analysis: from 10X CellRanger output through quality control, SCTransform normalisation, clustering, differential expression, and multi-layered functional enrichment.
+> Modular R pipeline for single-nucleus RNA-seq analysis: from CellBender-filtered 10X output through quality control, log-normalisation, RPCA/Harmony integration, doublet removal, clustering, differential expression, and multi-layered functional enrichment.
 
 ## Overview
 
-End-to-end snRNA-seq pipeline built on Seurat v5. Designed for multi-sample experiments (WT vs KO), the pipeline covers every analytical stage from raw CellRanger output to publication-ready figures and pathway enrichment reports. Each stage is implemented as an independent modular script callable from RMarkdown notebooks, enabling rapid adaptation to new datasets without pipeline modification.
+End-to-end snRNA-seq pipeline built on Seurat v5. Applied to **GSE262881** (Wang et al., *BMC Biology* 2025) — a 5xFAD Alzheimer mouse model study examining the effect of dietary inulin supplementation across brain regions. The pipeline covers every analytical stage from CellBender-filtered CellRanger output to publication-ready figures and pathway enrichment reports, with BPCells on-disk matrix storage for memory-efficient processing on consumer hardware (16 GB RAM). Each stage is implemented as an independent modular script callable from Quarto/RMarkdown notebooks, enabling rapid adaptation to new datasets.
 
 ---
 
@@ -19,41 +19,50 @@ End-to-end snRNA-seq pipeline built on Seurat v5. Designed for multi-sample expe
 
 ```mermaid
 flowchart TD
-    A["📥 10X CellRanger output · filtered_feature_bc_matrix"] --> B
+    A["📥 CellBender-filtered .h5 files · GEO GSE262881"] --> B
 
     subgraph QC ["1 · Quality Control & Doublet Detection"]
-        B["Load with Seurat::Read10X · multiple samples"]
-        B --> C["QC metrics · nCount_RNA · nFeature_RNA · %MT · Complexity"]
-        C --> D["Doublet detection · scDblFinder · per-sample scoring"]
-        D --> E["Cell filtering · UMI · gene count · MT thresholds"]
+        B["load_h5_samples_bpcells() · BPCells on-disk storage · per region"]
+        B --> C["QC metrics · nCount_RNA · nFeature_RNA · %MT · %Ribo · log10(Genes/UMI)"]
+        C --> D["Cell filtering · multi-layer · UMI · genes · MT · complexity thresholds"]
+        D --> E["Doublet detection · DoubletFinder · per-sample scoring · singlet filter"]
     end
 
-    subgraph NORM ["2 · Normalisation & Integration"]
-        E --> F["SCTransform · regularised negative binomial regression"]
-        F --> G["Multi-sample integration · batch correction · HVG selection"]
+    subgraph NORM ["2 · Normalisation & Feature Selection"]
+        E --> F["Single merge() · Seurat v5 split layers · avoids suffix accumulation"]
+        F --> G["LogNormalize · scale.factor = 10000 · per-sample layer"]
+        G --> H["FindVariableFeatures · vst · consensus HVGs · ScaleData · RunPCA"]
     end
 
-    subgraph DIM ["3 · Dimensionality Reduction & Clustering"]
-        G --> H["PCA · elbow selection"]
-        H --> I["UMAP · 2D projection"]
-        I --> J["Louvain clustering · FindNeighbors · resolution sweep"]
+    subgraph INT ["3 · Integration Comparison"]
+        H --> I["RPCA · IntegrateLayers · RPCAIntegration"]
+        H --> J["Harmony · IntegrateLayers · HarmonyIntegration · group.by sample_id"]
+        I --> K["Resolution sweep · CLUSTERING_DIMS × CLUSTERING_RESOLUTIONS · clustree"]
+        J --> K
     end
 
-    subgraph DE ["4 · Differential Expression"]
-        J --> K["FindAllMarkers · Wilcoxon · min.pct · log2FC threshold"]
-        K --> L["Volcano plots per cluster · UP / DOWN gene lists"]
+    subgraph DIM ["4 · Dimensionality Reduction & Clustering"]
+        K --> L["Select best method + resolution · UMAP · FindNeighbors · FindClusters"]
     end
 
-    subgraph ENRICH ["5 · Functional Enrichment"]
-        L --> M["GO · enrichGO · gseGO · BP · CC · MF"]
-        L --> N["KEGG · enrichKEGG · gseKEGG · pathview"]
-        L --> O["STRING PPI networks · PANTHER · EnrichR"]
+    subgraph ANNOT ["5 · Cell Type Annotation"]
+        L --> M["FindAllMarkers · cluster identity markers · Wilcoxon"]
+        L --> N["FindMarkers per cluster · Ctrl vs Inulin · DE within cell types"]
+        M --> O["SingleR · Allen Brain Atlas medians & trimmed_means · MouseRNAseqData"]
+        M --> P["Manual annotation · canonical brain markers · Slc17a7 · Gad1 · Mbp · Aqp4"]
+    end
+
+    subgraph ENRICH ["6 · Functional Enrichment"]
+        N --> Q["GO · enrichGO · gseGO · BP · CC · MF"]
+        N --> R["KEGG · enrichKEGG · gseKEGG · pathview"]
+        N --> S["STRING PPI · GSEA · EnrichR · Volcano plots"]
     end
 
     style QC fill:#1e3a5f,color:#fff,stroke:#3b82f6
     style NORM fill:#1e3a1e,color:#fff,stroke:#22c55e
+    style INT fill:#1e2a3a,color:#fff,stroke:#06b6d4
     style DIM fill:#2a1e3a,color:#fff,stroke:#8b5cf6
-    style DE fill:#3a1e1e,color:#fff,stroke:#ef4444
+    style ANNOT fill:#3a1e3a,color:#fff,stroke:#ec4899
     style ENRICH fill:#3a2a1e,color:#fff,stroke:#f59e0b
 ```
 
@@ -69,18 +78,16 @@ flowchart TD
 │
 ├── code/                              # Modular R scripts
 │   ├── 00_packages.R                  # Dependency management (pak)
-│   ├── 01_sc_functions.R              # Core QC utilities & plot export
-│   ├── 02_vulcano_plots.R             # Volcano plot generation
-│   ├── 03_GO.R                        # GO over-representation analysis
-│   ├── 04_strings.R                   # STRING PPI network analysis
-│   ├── 05_gse.R                       # GSEA (GO + KEGG ranked lists)
-│   ├── 06_Heatmap.R                   # ComplexHeatmap visualisation
-│   ├── 07_HeatMap_GO_types.R          # GO-category heatmaps
-│   ├── 08_EnrichR.R                   # EnrichR enrichment
-│   ├── 09_gseKEGG.R                   # KEGG pathway GSEA + pathview
-│   ├── ABA_sc_ref.R                   # Allen Brain Atlas reference
-│   ├── Clusters_splitted_libraries.R  # Per-library independent clustering
-│   ├── Doublets_Finders.R             # scDblFinder doublet detection
+│   ├── 01_aux_functions.R             # Logging, RAM reporting, checkpoint utilities
+│   ├── 02_sc_functions.R              # Core QC, BPCells loading, DoubletFinder, integration helpers
+│   ├── 03_vulcano_plots.R             # Volcano plot generation per cluster
+│   ├── 04_go_enrichment.R             # GO over-representation analysis (enrichGO)
+│   ├── 05_string_network.R            # STRING PPI network retrieval and visualisation
+│   ├── 06_gse_analysis.R              # GSEA ranked-list pipeline (gseGO)
+│   ├── 06_Heatmap.R                   # ComplexHeatmap of top DEGs
+│   ├── 08_EnrichR.R                   # Multi-library enrichment via enrichR
+│   ├── heatmap.R                      # heatmap_de() / heatmap_mean() / heatmap_genes() helpers
+│   ├── kegg_enrichment.R              # KEGG pathway GSEA + pathview
 │   └── global_variables.R             # Thresholds & organism parameters
 │
 ├── code_claude/                       # GSE194315 adaptation (PBMC CITE-seq reference)
@@ -103,29 +110,40 @@ flowchart TD
 | Script | Purpose |
 |---|---|
 | `00_packages.R` | Install/load all dependencies via `pak` |
-| `01_sc_functions.R` | `library_summary()`, `generate_qc_plots()`, `save_plot()` — QC metrics and dual-format (TIFF + PDF) export |
-| `02_vulcano_plots.R` | `perform_vulcano()` — ggplot2 volcano plots with ggrepel labels per cluster |
-| `03_GO.R` | `perform_enrichGO()` — clusterProfiler GO over-representation (BP, CC, MF) |
-| `04_strings.R` | STRINGdb PPI network retrieval and visualisation |
-| `05_gse.R` | `process_gene_list()` — GSEA ranked-list pipeline (GO + KEGG) |
+| `01_aux_functions.R` | `setup_logging()`, `ram_mb()`, `save_checkpoint()`, `load_checkpoint()`, `check_checkpoint()`, `save_table()`, `save_plot()` |
+| `02_sc_functions.R` | `load_h5_samples_bpcells()`, `add_qc_metrics()`, `build_combined_meta()`, `run_doubletfinder_bp()`, `build_seurat_singlets()`, `n_pcs()` |
+| `03_vulcano_plots.R` | `plot_volcano_clusters()` — ggplot2 volcano plots with ggrepel labels, one plot per cluster |
+| `04_go_enrichment.R` | `run_go_enrichment()` — clusterProfiler GO over-representation (BP, CC, MF) per cluster |
+| `05_string_network.R` | `run_string_network()` — STRINGdb PPI network retrieval and visualisation |
+| `06_gse_analysis.R` | `run_gse_analysis()` — GSEA ranked-list pipeline (gseGO) |
 | `06_Heatmap.R` | ComplexHeatmap of top DEGs per cluster |
-| `07_HeatMap_GO_types.R` | GO-category-specific expression heatmaps |
 | `08_EnrichR.R` | Multi-library enrichment via enrichR (GO, KEGG, Reactome, WikiPathways) |
-| `09_gseKEGG.R` | `gseKEGG()` with pathview pathway diagrams |
-| `Doublets_Finders.R` | scDblFinder per-sample doublet scoring and removal |
-| `Clusters_splitted_libraries.R` | Independent per-sample UMAP + Louvain clustering |
-| `ABA_sc_ref.R` | Allen Brain Atlas integration for cell type reference annotation |
-| `global_variables.R` | Centralised thresholds: `p_val`, `FC`, `kegg_organism`, `species` |
+| `heatmap.R` | `heatmap_de()`, `heatmap_mean()`, `heatmap_genes()` — flexible heatmap helpers |
+| `kegg_enrichment.R` | `run_kegg_enrichment()` — enrichKEGG + gseKEGG with pathview pathway diagrams |
+| `global_variables.R` | Centralised thresholds: `p_val`, `FC`, `QC_*`, `kegg_organism`, `species`, `CLUSTERING_DIMS`, `CLUSTERING_RESOLUTIONS` |
 
 ### Configuration (`global_variables.R`)
 
 ```r
 p_val          <- 0.05          # Adjusted p-value threshold
-FC             <- 0.25          # log2FC threshold
-kegg_organism  <- "mmu"         # KEGG organism code (configurable)
-species        <- 10090         # NCBI taxonomy ID
+FC             <- 0.25          # log2FC threshold for DE filtering
+kegg_organism  <- "mmu"         # KEGG organism code (mouse)
+species        <- 10090         # NCBI taxonomy ID (Mus musculus)
 organism       <- "org.Mm.eg.db"
-keyType        <- "UNIPROT"
+keyType        <- "SYMBOL"      # Gene ID format in data
+
+# QC thresholds — tune per tissue
+QC_MIN_FEATURES     <- 500
+QC_MAX_FEATURES     <- 6000
+QC_MIN_COUNTS       <- 1000
+QC_MAX_COUNTS       <- 50000
+QC_MAX_MT           <- 0.2     # Adjust to 0.01–0.05 for brain snRNA-seq
+QC_MIN_COMPLEXITY   <- 0.80
+
+# Integration & clustering
+N_INTEGRATION_FEATURES <- 2000
+CLUSTERING_DIMS        <- c(10, 20, 30)
+CLUSTERING_RESOLUTIONS <- c(0.1, 0.2, 0.4, 0.8)
 ```
 
 ---
@@ -141,65 +159,84 @@ renv::restore()   # Restores all packages from renv.lock (R 4.5.2)
 
 ### 2. Run the pipeline
 
-Open `rmds/snRNAseq_pipeline.qmd` in RStudio or VS Code and set `data_path` to your CellRanger output directory. Render via Quarto:
+Open `rmds/snRNAseq_pipeline.qmd` in RStudio or VS Code. Set `DATA_DIR` and `output_path` in the setup chunk to point at your CellBender-filtered `.h5` files. Render via Quarto:
 
 ```bash
-# Render the active Quarto pipeline
 quarto render rmds/snRNAseq_pipeline.qmd
 ```
 
-Or interactively in RStudio using the **Render** button.
+Or run interactively in RStudio chunk-by-chunk. The checkpoint system means any interrupted run restarts from the last completed step.
 
 ### 3. Run enrichment modules independently
 
+After the main notebook produces `cluster_markers_by_condition`, source enrichment scripts directly:
+
 ```r
-source("code/03_GO.R")       # GO over-representation
-source("code/05_gse.R")      # GSEA
-source("code/09_gseKEGG.R")  # KEGG pathway analysis
-source("code/04_strings.R")  # STRING PPI networks
+source("code/04_go_enrichment.R")   # GO over-representation
+source("code/06_gse_analysis.R")    # GSEA
+source("code/kegg_enrichment.R")    # KEGG pathway analysis + pathview
+source("code/05_string_network.R")  # STRING PPI networks
+source("code/08_EnrichR.R")         # EnrichR multi-database
 ```
 
-> Raw 10X CellRanger data and processed Seurat objects are not versioned. The `renv.lock` file fully specifies the computational environment.
+> Raw data and processed Seurat objects are not versioned. The `renv.lock` file fully specifies the computational environment.
 
 ---
 
-## Example Dataset — GSE194315
+## Dataset — GSE262881
 
-The `code_claude/` scripts demonstrate full pipeline adaptation to a public reference dataset:
+**Study:** A single-cell transcriptomic atlas of all cell types in the brain of 5xFAD Alzheimer mice in response to dietary inulin supplementation.
+**Reference:** Wang et al. *BMC Biology* **23**, 124 (2025). doi:[10.1186/s12915-025-02230-x](https://doi.org/10.1186/s12915-025-02230-x)
+**GEO accession:** [GSE262881](https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE262881)
+**Design:** 5xFAD transgenic mice (Alzheimer model) — Control vs. Inulin supplementation across multiple brain regions (Forebrain, Cerebellum, etc.).
+**Species:** *Mus musculus* (KEGG: `mmu`, taxonomy: 10090, annotation: `org.Mm.eg.db`)
+**Upstream processing:** FASTQ → CellRanger 7.1.0 → CellBender 0.2.2 → `.h5` files (available on GEO)
 
-**Study:** Immune landscape of Psoriatic Arthritis (PSA), Psoriasis (PSO) and Healthy controls via PBMC CITE-seq.
-**Reference:** Liu Y. et al. *Frontiers in Immunology* 13:835760 (2022). doi:[10.3389/fimmu.2022.835760](https://doi.org/10.3389/fimmu.2022.835760)
-**GEO accession:** [GSE194315](https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE194315)
-**Design:** 7 patients × 4 technical replicates = 28 libraries. 3 conditions: Healthy / PSA / PSO.
-**Species:** *Homo sapiens* (KEGG: `hsa`, taxonomy: 9606, annotation: `org.Hs.eg.db`)
+### Cell types identified (Forebrain)
+
+| Cell type | Key markers |
+|---|---|
+| Excitatory neurons (ExN L2/3) | Slc17a7, Lamp5, Cux2 |
+| Excitatory neurons (ExN L4) | Rorb, Cux1 |
+| Excitatory neurons (ExN L4/5) | Tox, Hs3st2 |
+| Excitatory neurons (ExN L5/6) | Tle4, Fexf2 |
+| Inhibitory neurons (InN Pvalb) | Gad1, Pvalb |
+| Inhibitory neurons (InN Sst) | Gad1, Sst |
+| Inhibitory neurons (InN Vip) | Gad1, Vip |
+| Oligodendrocytes | Plp1, Mbp |
+| OPC | Cacng4 |
+| Microglia | Siglech, Cx3cr1 |
+| Astrocytes | Aqp4, Gfap |
+| Vascular / SMC-Peri | Cldn5 |
 
 ### Downloading the data
 
 ```r
-# Option A — GEOquery (recommended)
+# GEOquery (recommended)
 BiocManager::install("GEOquery")
-GEOquery::getGEOSuppFiles("GSE194315", baseDir = "rawdata/")
-
-# Option B — Direct download from GEO FTP
-# https://ftp.ncbi.nlm.nih.gov/geo/series/GSE194nnn/GSE194315/suppl/
-# Download: GSE194315_PBMC-01-07_processed_data_files.tar.gz
-# Decompress into rawdata/GSE194315/
+GEOquery::getGEOSuppFiles("GSE262881", baseDir = "rawdata/")
 ```
 
-After download, the directory structure expected by `code_claude/global_variables_GSE194315.R`:
-
+Expected directory structure:
 ```
-rawdata/GSE194315/
-├── GSE194315_PBMC-01-07_processed_data_files/
-│   ├── PBMC-01-1.barcodes.tsv.gz
-│   ├── PBMC-01-1.features.tsv.gz
-│   ├── PBMC-01-1.matrix.mtx.gz
-│   └── ...  (28 libraries × 3 files)
-├── GSE194315_CellMetadata-AS_TotalCiteseq_*.tsv
-└── GSE194315_StudyInfo_*.xlsx
+rawdata/GSE262881_RAW/
+├── <sample>_forebrain_CellBender_feature_bc_matrix_filtered.h5
+├── <sample>_cerebellum_CellBender_feature_bc_matrix_filtered.h5
+└── ...
 ```
 
 > Raw data is gitignored (`rawdata/` excluded). Only analysis code is versioned.
+
+---
+
+## Reference Analysis — GSE194315
+
+The `code_claude/` subdirectory contains a full adaptation to a public human PBMC CITE-seq dataset used as a development reference:
+
+**Reference:** Liu Y. et al. *Frontiers in Immunology* 13:835760 (2022). doi:[10.3389/fimmu.2022.835760](https://doi.org/10.3389/fimmu.2022.835760)
+**GEO accession:** [GSE194315](https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE194315)
+**Design:** 7 patients × 4 technical replicates = 28 libraries. 3 conditions: Healthy / PSA / PSO.
+**Species:** *Homo sapiens* (KEGG: `hsa`, taxonomy: 9606, annotation: `org.Hs.eg.db`)
 
 ---
 
@@ -219,9 +256,9 @@ Thresholds must be tuned per tissue type. The values below are defaults for **hu
 
 **Tissue-specific guidance:**
 
-- **Brain snRNA-seq (nuclei):** `QC_MAX_MT` 1–5 %, `QC_MAX_FEATURES` 3 000–4 000 (nuclei have fewer detectable genes than whole cells)
+- **Brain snRNA-seq (nuclei) — this pipeline:** `QC_MAX_MT` 1–5 %, `QC_MAX_FEATURES` 3 000–6 000 (nuclei capture fewer transcripts than whole cells; Wang et al. 2025 data are CellBender-filtered so ambient RNA is already reduced)
 - **Tumour biopsies:** higher MT tolerance (10–25 %) due to hypoxic stress
-- **Immune cells (PBMC):** standard values above apply
+- **Immune cells (PBMC):** standard values in table apply
 
 All thresholds are centralised in `global_variables.R` (or the dataset-specific variant). Change them there — do not hardcode values in notebooks.
 
@@ -304,33 +341,68 @@ renv::restore()  # retry remaining packages
 
 | Layer | Tools |
 |---|---|
-| Single-cell framework | Seurat v5, sctransform |
-| Doublet detection | scDblFinder |
-| Cell type annotation | SingleR, Azimuth, Allen Brain Atlas |
-| Differential expression | FindAllMarkers (Wilcoxon), MAST |
+| Single-cell framework | Seurat v5 |
+| On-disk sparse storage | BPCells (memory-efficient processing on 16 GB RAM) |
+| Upstream denoising | CellBender 0.2.2 (ambient RNA removal, applied by original authors) |
+| Doublet detection | DoubletFinder (per-library, before integration) |
+| Normalisation | LogNormalize (scale.factor = 10 000, per-sample split layers) |
+| Integration | RPCA (`RPCAIntegration`) + Harmony (`HarmonyIntegration`) — compared side-by-side |
+| Clustering optimisation | clustree — resolution sweep across CLUSTERING_DIMS × CLUSTERING_RESOLUTIONS |
+| Cell type annotation | SingleR with Allen Brain Atlas (medians + trimmed means) + MouseRNAseqData; manual marker curation |
+| Differential expression | FindMarkers (Ctrl vs Inulin per cluster), FindAllMarkers (cluster identity) — Wilcoxon |
 | GO enrichment | clusterProfiler (enrichGO, gseGO) |
 | KEGG analysis | clusterProfiler (enrichKEGG, gseKEGG), pathview |
 | PPI networks | STRINGdb |
 | Multi-database enrichment | enrichR |
-| Pathway classification | rbioapi (PANTHER) |
-| Visualisation | ggplot2, ComplexHeatmap, patchwork |
-| Annotation | org.Mm.eg.db, biomaRt, AnnotationHub |
-| Reproducibility | renv |
+| Visualisation | ggplot2, ComplexHeatmap, patchwork, clustree |
+| Annotation databases | org.Mm.eg.db, biomaRt, AnnotationHub |
+| Reproducibility | renv (R 4.5.2 lock file) |
 
 ---
 
-## Example Output
+## Pipeline Outputs
 
-> Figures will be added here from the GSE194315 reference analysis once the pipeline run is complete. Expected outputs:
+All figures are saved in dual format (TIFF 300 dpi + PDF) via `save_plot()` to `output/<experiment>/figures/<subdir>/`.
 
-| Figure | Script | Description |
+| Figure | Notebook section | Description |
 |---|---|---|
-| UMAP coloured by cell type | `01_sc_functions.R` → `generate_qc_plots()` | 2D projection with Louvain cluster labels and annotated cell types |
-| QC violin plots (before/after filtering) | `01_sc_functions.R` → `generate_qc_plots()` | nCount_RNA, nFeature_RNA, % MT per sample pre- and post-filter |
-| Dotplot of canonical marker genes | Seurat `DotPlot()` | Top markers per cluster confirming cell type annotation |
-| Volcano plot — condition vs. condition | `02_vulcano_plots.R` → `perform_vulcano()` | log2FC vs. −log10(p-value) per cluster, UP/DOWN genes labelled |
+| QC violin plots (pre / post filter) | §2–3 | nCount_RNA, nFeature_RNA, %MT, %Ribo, log10(Genes/UMI) per library — side-by-side before/after |
+| Elbow plot | §5 | Variance explained by PC — red dashed line marks auto-selected cutoff |
+| UMAP cluster sweep | §6 | One UMAP per dims × resolution combination |
+| Clustree | §6 | Cluster stability across resolution sweep for each dim setting |
+| Cell proportion bar charts | §6 | Ctrl vs. Inulin proportions per cluster × resolution |
+| UMAP (final) | §8 | 2D projection coloured by cluster, condition, or feature expression |
+| UMAP with cell type annotations | §10 | Automatic (SingleR) and manual annotation overlays |
+| Heatmap — cluster identity markers | §9 | Top 10 DEGs per cluster (FindAllMarkers) |
+| Heatmap — condition DE markers | §9 | Top 10 Ctrl vs. Inulin DE genes per cluster |
+| Volcano plots | §12 | log2FC vs. −log10(padj) per cluster |
+| GO dot/bar plots | §13 | enrichGO / gseGO results per cluster |
+| STRING networks | §14 | PPI sub-networks for up/downregulated genes |
+| KEGG pathway diagrams | §16 | pathview overlays per enriched pathway |
 
-Figures are saved in dual format (TIFF 300 dpi + PDF) to `output/<experiment>/figures/`.
+---
+
+## References
+
+### Dataset
+
+Wang X. et al. (2025). A single-cell transcriptomic atlas of all cell types in the brain of 5xFAD Alzheimer mice in response to dietary inulin supplementation. *BMC Biology* **23**, 124. doi:[10.1186/s12915-025-02230-x](https://doi.org/10.1186/s12915-025-02230-x) · GEO: [GSE262881](https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE262881)
+
+### Core methods
+
+Hao Y. et al. (2024). Dictionary learning for integrative, multimodal and scalable single-cell analysis. *Nature Biotechnology* **42**, 293–304. doi:[10.1038/s41587-023-01767-y](https://doi.org/10.1038/s41587-023-01767-y) — **Seurat v5**
+
+Korsunsky I. et al. (2019). Fast, sensitive and accurate integration of single-cell data with Harmony. *Nature Methods* **16**, 1289–1296. doi:[10.1038/s41592-019-0619-0](https://doi.org/10.1038/s41592-019-0619-0) — **Harmony integration**
+
+McGinnis C.S. et al. (2019). DoubletFinder: Doublet Detection in Single-Cell RNA Sequencing Data Using Artificial Nearest Neighbors. *Cell Systems* **8**(4), 329–337. doi:[10.1016/j.cels.2019.03.003](https://doi.org/10.1016/j.cels.2019.03.003) — **DoubletFinder**
+
+Fleming S.J. et al. (2023). Unsupervised removal of systematic background noise from droplet-based single-cell experiments using CellBender. *Nature Methods* **20**, 1323–1335. doi:[10.1038/s41592-023-01943-7](https://doi.org/10.1038/s41592-023-01943-7) — **CellBender**
+
+Aran D. et al. (2019). Reference-based analysis of lung single-cell sequencing reveals a transitional profibrotic macrophage. *Nature Immunology* **20**, 163–172. doi:[10.1038/s41590-018-0276-y](https://doi.org/10.1038/s41590-018-0276-y) — **SingleR**
+
+Wu T. et al. (2021). clusterProfiler 4.0: A universal enrichment tool for interpreting omics data. *Innovation* **2**(3), 100141. doi:[10.1016/j.xinn.2021.100141](https://doi.org/10.1016/j.xinn.2021.100141) — **clusterProfiler**
+
+Szklarczyk D. et al. (2023). The STRING database in 2023: protein–protein association networks and functional enrichment analyses for any sequenced genome of interest. *Nucleic Acids Research* **51**(D1), D638–D646. doi:[10.1093/nar/gkac1000](https://doi.org/10.1093/nar/gkac1000) — **STRINGdb**
 
 ---
 
