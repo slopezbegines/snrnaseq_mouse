@@ -1326,8 +1326,73 @@ Visualizes cluster stability across resolutions for each dimension setting.
     print(p_tree)
     save_plot(paste0("Clustree_RPCA_dims", d), p_tree,
               width = 10, height = 12, subdir = "clustering")
-  } 
+  }
 ```
+
+### Cell Type Proportion
+
+Tabulate cluster proportions by condition for every dims × resolution combination in the RPCA sweep.
+
+```{r rpca_proportion}
+proportion_results <- list()
+sweep_dir <- file.path(output_path, "RData")
+
+for (dims in CLUSTERING_DIMS) {
+  for (res in CLUSTERING_RESOLUTIONS) {
+    sweep_name <- paste0("RPCA_Dims_", dims, "_Res_", res)
+    rds_file   <- file.path(sweep_dir, paste0("sweep_", sweep_name, ".rds"))
+
+    if (!file.exists(rds_file)) {
+      message(sprintf("[PROPORTION] Skipping %s — file not found", sweep_name))
+      next
+    }
+
+    tmp <- readRDS(rds_file)
+    proportions <- as.data.frame(prop.table(table(Idents(tmp), tmp$condition), margin = 2))
+    proportions$resolution <- as.character(res)
+    proportions$dims       <- as.character(dims)
+    proportion_results[[sweep_name]] <- proportions
+    rm(tmp); gc()
+  }
+}
+
+proportions_all <- do.call(rbind, proportion_results)
+proportions_all %>%
+  write_xlsx(file.path(output_path, "tables", "Cell_type_proportion_RPCA.xlsx"))
+
+proportions_all$dims <- factor(proportions_all$dims, levels = unique(proportions_all$dims))
+proportions_all$resolution <- factor(proportions_all$resolution, levels = unique(proportions_all$resolution))
+
+
+for (res in levels(proportions_all$resolution)) {
+  filtered_data <- proportions_all %>% dplyr::filter(resolution == res)
+  
+  
+  p <- ggplot(filtered_data) +
+    aes(x = Var2, y = Freq, fill = Var1) +
+    geom_bar(stat = "summary", fun = "sum") +
+    scale_fill_hue(direction = 1) +
+    labs(
+      x = "Cluster", y = "Proportion", fill = "Condition",
+      title = paste("RPCA — Cluster Proportions | Resolution =", res)
+    ) +
+    theme_minimal() +
+    facet_wrap(vars(dims), labeller = labeller(dims = \(x) paste0("PCs = ", x))) +
+    theme(
+      axis.text.x     = element_text(angle = 45, hjust = 1),
+      panel.grid.major = element_line(color = "gray", linetype = "dotted"),
+      legend.position = "right"
+    )
+  
+  
+  save_plot(paste0("Cell_Proportion_RPCA_resolution_", res), p, subdir = "clustering")
+  print(p)
+}
+
+rm(proportion_results, proportions_all, filtered_data, p)
+gc()
+```
+
 
 ## HARMONY INTEGRATION
 
@@ -1517,7 +1582,69 @@ Visualizes cluster stability across resolutions for each dimension setting.
     print(p_tree)
     save_plot(paste0("Clustree_Harmony_dims", d), p_tree,
               width = 10, height = 12, subdir = "clustering")
-  } 
+  }
+```
+
+### Cell Type Proportion
+
+Tabulate cluster proportions by condition for every dims × resolution combination in the Harmony sweep.
+
+```{r harmony_proportion}
+proportion_results <- list()
+sweep_dir <- file.path(output_path, "RData")
+
+for (dims in CLUSTERING_DIMS) {
+  for (res in CLUSTERING_RESOLUTIONS) {
+    sweep_name <- paste0("Harmony_Dims_", dims, "_Res_", res)
+    rds_file   <- file.path(sweep_dir, paste0("sweep_", sweep_name, ".rds"))
+
+    if (!file.exists(rds_file)) {
+      message(sprintf("[PROPORTION] Skipping %s — file not found", sweep_name))
+      next
+    }
+
+    tmp <- readRDS(rds_file)
+    proportions <- as.data.frame(prop.table(table(Idents(tmp), tmp$condition), margin = 2))
+    proportions$resolution <- as.character(res)
+    proportions$dims       <- as.character(dims)
+    proportion_results[[sweep_name]] <- proportions
+    rm(tmp); gc()
+  }
+}
+
+proportions_all <- do.call(rbind, proportion_results)
+proportions_all %>%
+  write_xlsx(file.path(output_path, "tables", "Cell_type_proportion_Harmony.xlsx"))
+
+proportions_all$dims <- factor(proportions_all$dims, levels = unique(proportions_all$dims))
+proportions_all$resolution <- factor(proportions_all$resolution, levels = unique(proportions_all$resolution))
+
+
+for (res in levels(proportions_all$resolution)) {
+  filtered_data <- proportions_all %>% dplyr::filter(resolution == res)
+  
+  
+  p <- ggplot(filtered_data) +
+    aes(x = Var2, y = Freq, fill = Var1) +
+    geom_bar(stat = "summary", fun = "sum") +
+    scale_fill_hue(direction = 1) +
+    labs(
+      x = "Cluster", y = "Proportion", fill = "Condition",
+      title = paste("Harmony — Cluster Proportions | Resolution =", res)
+    ) +
+    theme_minimal() +
+    facet_wrap(vars(dims), labeller = labeller(dims = \(x) paste0("PCs = ", x))) +
+    theme(
+      axis.text.x     = element_text(angle = 45, hjust = 1),
+      panel.grid.major = element_line(color = "gray", linetype = "dotted"),
+      legend.position = "right"
+    )
+  save_plot(paste0("Cell_Proportion_Harmony_Resolution_", res), p, subdir = "clustering")
+  print(p)
+}
+
+rm(proportion_results, proportions_all, filtered_data, p)
+gc()
 ```
 
 # 7. HVG before and after integration
@@ -1591,7 +1718,7 @@ data_select <- readRDS(paste0(output_path, "/RData/sweep_Harmony_Dims_", dims, "
 data_select@meta.data$condition <- factor(data_select@meta.data$condition, levels = c("Ctrl", "Inulin"))
 ```
 
-# 6. Plot UMAP & UMAP Features
+# 8. Plot UMAP & UMAP Features
 
 ```{r}
 tic()
@@ -1637,7 +1764,7 @@ top <-head(VariableFeatures(data_select),10)
 rm(top, feature_plot)
 ```
 
-# 7. Finding differentially expressed features (cluster biomarkers)
+# 9. Finding differentially expressed features (cluster biomarkers)
 
 Seurat can help you find markers that define clusters via differential expression (DE).
 By default, it identifies positive and negative markers of a single cluster (specified in ident.1), compared to all other cells.
@@ -1832,7 +1959,7 @@ Idents(data_select_bp) <- "seurat_clusters"
 cluster_markers_by_cluster <- FindAllMarkers(data_select_bp,
                                       test.use = "wilcox",
                                       only.pos = FALSE,
-                                      min.pct = 0.1,
+                                      min.pct = 0.25,
                                       logfc.threshold = 0.1,
                                       max.cells.per.ident = 300)
 
@@ -1888,6 +2015,82 @@ gc()
 
 save_plot("HeatMap_cluster_plot", plot, height = 18)
 save_plot("HeatMap_cluster_plot_by_cluster", plot2, height = 18)
+
+```
+
+## Cell type proportion
+
+Calculate Cell Type Proportions Tabulate proportions for each cluster by
+genotype (condition).
+
+```{r}
+# Calculate proportions for each resolution and combine results
+proportion_results <- list()
+
+# Loop through each resolution in the data_int_list
+for (res in names(data_int_list)) {
+  # Extract the Seurat object for the current resolution
+  seurat_obj <- data_int_list[[res]]
+  
+  # Calculate the table of counts by cluster and genotype
+  cell_type_table <- table(Idents(seurat_obj), seurat_obj$condition)
+  
+  # Convert to proportions
+  proportions <- as.data.frame(prop.table(cell_type_table, margin = 2))
+  
+  # Add resolution and dimensions as columns for reference
+  proportions$resolution <- gsub(".*_Res_", "", res)
+  proportions$dims <- gsub("_Res_.*", "", gsub("Dims_", "", res))
+  
+  # Store the result in the list
+  proportion_results[[res]] <- proportions
+}
+
+# Combine all results into a single data frame
+proportions_all <- do.call(rbind, proportion_results)
+
+# Print the combined proportions table
+print(proportions_all)
+
+# Save the proportions table as a CSV for future reference
+proportions_all %>% write_xlsx(paste0(output_path,"tables/Cell_type_genotype_proportion.xlsx"))
+
+```
+
+```{r}
+# Ensure 'dims' is treated as a factor for better plotting
+proportions_all$dims <- factor(proportions_all$dims, levels = unique(proportions_all$dims))
+
+# Loop through each dimension and generate separate plots for resolutions
+for (dim in levels(proportions_all$dims)) {
+  # Filter the data for the current dimension
+  filtered_data <- proportions_all %>% filter(dims == dim)
+  
+  # Generate the plot
+  plot <- ggplot(filtered_data, aes(x = Var1, y = Freq, fill = Var2)) +
+    geom_bar(stat = "identity", position = "dodge") +
+    facet_wrap(~ resolution, ncol = 2) +  # Facet by resolution
+    labs(
+      x = "Cluster",
+      y = "Proportion",
+      fill = "Condition",
+      title = paste("Cluster Proportions for Dimensions =", dim)
+    ) +
+    theme_minimal() +
+    theme(
+      axis.text.x = element_text(angle = 45, hjust = 1),
+      panel.grid.major = element_line(color = "gray", linetype = "dotted"),
+      legend.position = "bottom"
+    )
+  
+  # Save the plot
+  filename <- paste0("Cluster_Proportions_Dims_", dim)
+ save_plot(filename, plot)
+  
+  # Optionally print the plot to the console
+  print(plot)
+}
+
 
 ```
 
@@ -2153,7 +2356,7 @@ gc()
 ```
 
 
-# 9. Manual Clustering Association
+# 10. Manual Clustering Association
 
 ## Brain cell types (Rubio-Pastor F. PhD Thsis 2025)
 
@@ -2251,6 +2454,27 @@ for(feature in features_presents){
 }
 ```
 
+
+## Stacked Violin Plot
+
+```{r}
+plot_stacked_violin <- function(seurat_obj, features, split_by = "condition",
+                                assay = "RNA", title = NULL) {
+  features <- intersect(features, rownames(seurat_obj))
+  vln <- VlnPlot(seurat_obj, features = features,
+                 stack = TRUE, flip = TRUE, pt.size = 0.2, raster = FALSE,
+                 fill.by = "ident", split.by = split_by, split.plot = FALSE,
+                 assay = assay)
+  if (!is.null(title)) vln <- vln + ggtitle(title)
+  vln
+}
+
+vln_stacked <- plot_stacked_violin(data_select_bp, features = features)
+print(vln_stacked)
+save_plot("Stacked_VlnPlot_markers", vln_stacked, width = 8, height = 12)
+```
+
+
 ## DotPlot
 
 ```{r}
@@ -2315,7 +2539,7 @@ save_plot("DotPlot_features", dotplot, width = 16 ,height = 18)
   save_plot("UMAP_manual_annotation", plot_manual, width = 12, height = 6)
 ```
 
-# 8. Saving
+# 11. Saving
 
 ```{r}
 #Save Normalized and dimentionally reduced data
@@ -2372,59 +2596,84 @@ load(paste0(file.path(".",output_path,"RData"),"/","cluster_markers_by_condition
 
 Now, cluster_list will be used as input for the next steps.
 
-# 9. Vulcano Plots
+# 12. Vulcano Plots
 
 ```{r}
 source("../code/03_vulcano_plots.R")
 plot_volcano_clusters(cluster_markers_by_condition, top_n = 15, subdir = "DE/volcano")
 ```
 
-# 10. GO
+# 13. GO
 
 ```{r}
 source("../code/go_enrichment.R")
 run_go_enrichment(cluster_markers_by_condition)
 ```
 
-# 11. Strings
+# 14. Strings
 
 ```{r}
 source("../code/string_network.R")
 run_string_network(cluster_markers_by_condition)
 ```
 
-# 12. GSE
+# 15. GSE
 
 ```{r}
 source("../code/gse_analysis.R")
 run_gse_analysis(cluster_markers_by_condition)
 ```
 
-# 13. KEGG
+# 16. KEGG
 
 ```{r}
 source("../code/kegg_enrichment.R")
 run_kegg_enrichment(cluster_markers_by_condition)
 ```
 
-# 14. HeatMaps
+# 17. HeatMaps
 
 ```{r}
+source("../code/heatmap.R")
 
-# Gene list
-gene_list <- c("Hmgcr", "Srebf2", "Apoe","Lrp1", "Lrp1b", "Abca1")
+  # DE genes, all clusters
+  heatmap_de(data_select_bp, cluster_markers_by_condition)
 
-source("code/06_Heatmap.R")
+  # DE genes, only clusters 0, 2 and 5, magma palette, top 30 genes
+  heatmap_de(data_select_bp, cluster_markers_by_condition,
+             clusters = c(0, 2, 5), n_top = 30, palette = "magma")
+
+  # Custom genes — single combined heatmap across clusters 0 and 3
+  heatmap_genes(data_select_bp, c("Gfap","Cx3cr1","Mbp","Pvalb"),
+                clusters = c(0, 3))
+
+  # Custom genes — one heatmap per cluster (named clusters also work)
+ # heatmap_genes(data_select_bp, c("Gfap","Cx3cr1","Mbp"), clusters = c("Astrocytes","Microglia"), per_cluster = TRUE)
+  
+  
 ```
-
-# 15. HeatMaps GO Types
-
 ```{r}
-#source("code/07_HeatMap_GO_types.R")
+source("../code/heatmap.R")
+  # All clusters, all conditions — mean expression of a gene set
+  heatmap_mean(data_select_bp, c("Gfap","Cx3cr1","Mbp","Pvalb","Aqp4"))
+
+  my_genes <- c("Gfap","Cx3cr1","Mbp","Pvalb","Aqp4", "Gad1", "Slc17a7", "Lamp5")
+  # Only clusters 0, 2 and 5
+  heatmap_mean(data_select_bp, my_genes, clusters = c(0, 2, 5))
+
+  # Raw mean (no z-score) — shows actual log-normalised values
+  heatmap_mean(data_select_bp, my_genes, scale_rows = TRUE, palette = "viridis")
 ```
 
-# 16. EnrichR
+# 18. EnrichR
 
 ```{r}
 source("code/08_EnrichR.R")
 ```
+
+
+# sessionInfo
+```{r}
+sessionInfo()
+```
+

@@ -1013,8 +1013,8 @@ save(data_int, file = paste0(output_path, "RData/", "data_int", ".RData")) # Sav
 #load(paste0(output_path, "RData/", "data_int_list", ".RData"))
 ```
 
-Step 5: Cell Type Proportions by Genotype Compare the distribution of
-cell types between WT and KO.
+Step 5: Cell Type Proportions by Genotype 
+Compare the distribution of cell types between WT and KO.
 
 ## Cell type proportion
 

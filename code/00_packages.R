@@ -87,7 +87,12 @@ bioc_packages <- paste0("bioc::", c(
   "glmGamPoi", # Faster SCTransform backend
   "MAST", # Faster DE testing
   "EnhancedVolcano",
-  "scDblFinder" # Doublet detection
+  "scDblFinder", # Doublet detection
+  "clusterProfiler", # GO enrichment
+  "STRINGdb", # STRING PPI database
+  "enrichplot", # GO enrichment visualization
+  "org.Hs.eg.db", # Gene annotations (Human)
+  "org.Mm.eg.db" # Gene annotations (Mouse)
 ))
 #
 load_pkgs(bioc_packages)

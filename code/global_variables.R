@@ -13,7 +13,7 @@ pdf_extension <- ".pdf"
 
 # --- Species / organism -------------------------------------------------------
 species <- 10090 # NCBI Taxonomy ID for Homo sapiens #9606 for Human, 10090 for mouse, 7955 for zebrafish
-organism <- "org.Ms.eg.db" # Bioconductor annotation package #"org.Dr.eg.db". "org.Hs.eg.db"
+organism <- "org.Mm.eg.db" # Bioconductor annotation package #"org.Dr.eg.db". "org.Hs.eg.db"
 kegg_organism <- "mmu" # KEGG organism code for Homo sapiens #dre for Danio rerio, hsa for Homo sapiens, mmu for Mus musculus
 keyType <- "SYMBOL"
 KEGGkeyType <- "kegg"
@@ -22,11 +22,11 @@ KEGGkeyType <- "kegg"
 # --- QC thresholds (standard human PBMC values) --------------------------------
 # Based on: https://hbctraining.github.io/scRNA-seq/lessons/04_SC_quality_control.html
 # and standard 10X PBMC recommendations (PBMCs are cytoplasm-rich → higher MT tolerance)
-QC_MIN_FEATURES <- 200 # Minimum genes detected per cell
-QC_MAX_FEATURES <- 5000 # Maximum genes per cell (high = likely doublet)
-QC_MIN_COUNTS <- 500 # Minimum UMI counts per cell
-QC_MAX_COUNTS <- 25000 # Maximum UMI counts per cell (high = likely doublet)
-QC_MAX_MT <- 2 # Maximum % mitochondrial reads
+QC_MIN_FEATURES <- 500 # Minimum genes detected per cell
+QC_MAX_FEATURES <- 6000 # Maximum genes per cell (high = likely doublet)
+QC_MIN_COUNTS <- 1000 # Minimum UMI counts per cell
+QC_MAX_COUNTS <- 50000 # Maximum UMI counts per cell (high = likely doublet)
+QC_MAX_MT <- 0.2 # Maximum % mitochondrial reads
 # NOTE: PBMCs have cytoplasm → higher baseline MT than nuclei
 # Paper used snRNA from brain (1% MT), here 20% is standard
 QC_MIN_COMPLEXITY <- 0.80 # Minimum log10(genes / UMI) novelty score
