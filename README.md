@@ -98,9 +98,7 @@ flowchart TD
 │
 └── rmds/                              # Analysis notebooks
     ├── snRNAseq_pipeline.qmd          # ⭐ Active primary notebook (Quarto, in development)
-    ├── README.md                      # Notebook guide — which file to use and when
-    ├── Single_Cell_10X_Integrated_functions_SCT - PV_Cre-chacon22.Rmd  # Legacy Rmd template
-    └── old/                           # Archived pre-SCTransform and experimental notebooks
+    └── README.md                      # Notebook guide — which file to use and when
 ```
 
 ---
@@ -116,7 +114,7 @@ flowchart TD
 | `04_go_enrichment.R` | `run_go_enrichment()` — clusterProfiler GO over-representation (BP, CC, MF) per cluster |
 | `05_string_network.R` | `run_string_network()` — STRINGdb PPI network retrieval and visualisation |
 | `06_gse_analysis.R` | `run_gse_analysis()` — GSEA ranked-list pipeline (gseGO) |
-| `06_Heatmap.R` | ComplexHeatmap of top DEGs per cluster |
+| `07_Heatmap.R` | ComplexHeatmap of top DEGs per cluster |
 | `08_EnrichR.R` | Multi-library enrichment via enrichR (GO, KEGG, Reactome, WikiPathways) |
 | `heatmap.R` | `heatmap_de()`, `heatmap_mean()`, `heatmap_genes()` — flexible heatmap helpers |
 | `kegg_enrichment.R` | `run_kegg_enrichment()` — enrichKEGG + gseKEGG with pathview pathway diagrams |
@@ -228,18 +226,6 @@ rawdata/GSE262881_RAW/
 > Raw data is gitignored (`rawdata/` excluded). Only analysis code is versioned.
 
 ---
-
-## Reference Analysis — GSE194315
-
-The `code_claude/` subdirectory contains a full adaptation to a public human PBMC CITE-seq dataset used as a development reference:
-
-**Reference:** Liu Y. et al. *Frontiers in Immunology* 13:835760 (2022). doi:[10.3389/fimmu.2022.835760](https://doi.org/10.3389/fimmu.2022.835760)
-**GEO accession:** [GSE194315](https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE194315)
-**Design:** 7 patients × 4 technical replicates = 28 libraries. 3 conditions: Healthy / PSA / PSO.
-**Species:** *Homo sapiens* (KEGG: `hsa`, taxonomy: 9606, annotation: `org.Hs.eg.db`)
-
----
-
 ## QC Thresholds
 
 Thresholds must be tuned per tissue type. The values below are defaults for **human PBMCs** (from `code_claude/global_variables_GSE194315.R`) and serve as starting-point reference.
@@ -250,7 +236,7 @@ Thresholds must be tuned per tissue type. The values below are defaults for **hu
 | Max genes per cell | `QC_MAX_FEATURES` | 5 000 | Above this → likely doublet |
 | Min UMI counts | `QC_MIN_COUNTS` | 500 | Below this → poor library complexity |
 | Max UMI counts | `QC_MAX_COUNTS` | 25 000 | Above this → likely doublet |
-| Max % mitochondrial | `QC_MAX_MT` | 20 % | PBMCs have cytoplasm → higher baseline than nuclei; brain snRNA-seq typically uses 1–5 % |
+| Max % mitochondrial | `QC_MAX_MT` | 0.20 % | PBMCs have cytoplasm → higher baseline than nuclei; brain snRNA-seq typically uses 1–5 % |
 | Min complexity (log10 genes/UMI) | `QC_MIN_COMPLEXITY` | 0.80 | Novelty score; low = low-complexity / stressed cells |
 | Max % ribosomal | `QC_MAX_RIBO` | 60 % | No strict lower bound; very high ribo% can indicate stressed cells |
 
@@ -280,7 +266,7 @@ Benchmarked on an i7-7560U (2 physical / 4 logical cores, 16 GB RAM + 16 GB swap
 ```r
 # Sequential (safe on ≤ 16 GB RAM, protects against fork overhead)
 PARALLEL_WORKERS      <- 1
-FUTURE_GLOBALS_MAX_MB <- 6000   # 6 GB global size limit for {future}
+FUTURE_GLOBALS_MAX_MB <- 14000   # 14 GB global size limit for {future}
 plan("sequential")
 
 # Multi-session (use on ≥ 32 GB RAM)
