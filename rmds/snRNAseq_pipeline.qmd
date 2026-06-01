@@ -2018,81 +2018,6 @@ save_plot("HeatMap_cluster_plot_by_cluster", plot2, height = 18)
 
 ```
 
-## Cell type proportion
-
-Calculate Cell Type Proportions Tabulate proportions for each cluster by
-genotype (condition).
-
-```{r}
-# Calculate proportions for each resolution and combine results
-proportion_results <- list()
-
-# Loop through each resolution in the data_int_list
-for (res in names(data_int_list)) {
-  # Extract the Seurat object for the current resolution
-  seurat_obj <- data_int_list[[res]]
-  
-  # Calculate the table of counts by cluster and genotype
-  cell_type_table <- table(Idents(seurat_obj), seurat_obj$condition)
-  
-  # Convert to proportions
-  proportions <- as.data.frame(prop.table(cell_type_table, margin = 2))
-  
-  # Add resolution and dimensions as columns for reference
-  proportions$resolution <- gsub(".*_Res_", "", res)
-  proportions$dims <- gsub("_Res_.*", "", gsub("Dims_", "", res))
-  
-  # Store the result in the list
-  proportion_results[[res]] <- proportions
-}
-
-# Combine all results into a single data frame
-proportions_all <- do.call(rbind, proportion_results)
-
-# Print the combined proportions table
-print(proportions_all)
-
-# Save the proportions table as a CSV for future reference
-proportions_all %>% write_xlsx(paste0(output_path,"tables/Cell_type_genotype_proportion.xlsx"))
-
-```
-
-```{r}
-# Ensure 'dims' is treated as a factor for better plotting
-proportions_all$dims <- factor(proportions_all$dims, levels = unique(proportions_all$dims))
-
-# Loop through each dimension and generate separate plots for resolutions
-for (dim in levels(proportions_all$dims)) {
-  # Filter the data for the current dimension
-  filtered_data <- proportions_all %>% filter(dims == dim)
-  
-  # Generate the plot
-  plot <- ggplot(filtered_data, aes(x = Var1, y = Freq, fill = Var2)) +
-    geom_bar(stat = "identity", position = "dodge") +
-    facet_wrap(~ resolution, ncol = 2) +  # Facet by resolution
-    labs(
-      x = "Cluster",
-      y = "Proportion",
-      fill = "Condition",
-      title = paste("Cluster Proportions for Dimensions =", dim)
-    ) +
-    theme_minimal() +
-    theme(
-      axis.text.x = element_text(angle = 45, hjust = 1),
-      panel.grid.major = element_line(color = "gray", linetype = "dotted"),
-      legend.position = "bottom"
-    )
-  
-  # Save the plot
-  filename <- paste0("Cluster_Proportions_Dims_", dim)
- save_plot(filename, plot)
-  
-  # Optionally print the plot to the console
-  print(plot)
-}
-
-
-```
 
 # 8. Automatic Clustering association
 
@@ -2606,21 +2531,21 @@ plot_volcano_clusters(cluster_markers_by_condition, top_n = 15, subdir = "DE/vol
 # 13. GO
 
 ```{r}
-source("../code/go_enrichment.R")
+source("../code/04_go_enrichment.R")
 run_go_enrichment(cluster_markers_by_condition)
 ```
 
 # 14. Strings
 
 ```{r}
-source("../code/string_network.R")
+source("../code/05_string_network.R")
 run_string_network(cluster_markers_by_condition)
 ```
 
 # 15. GSE
 
 ```{r}
-source("../code/gse_analysis.R")
+source("../code/06_gse_analysis.R")
 run_gse_analysis(cluster_markers_by_condition)
 ```
 
@@ -2668,7 +2593,7 @@ source("../code/heatmap.R")
 # 18. EnrichR
 
 ```{r}
-source("code/08_EnrichR.R")
+source("../code/08_EnrichR.R")
 ```
 
 
