@@ -50,8 +50,8 @@ save_plot <- function(plotname, plot, width = 8, height = 6, subdir = "") {
   tryCatch(
     {
       if (inherits(plot, c("ggplot", "patchwork", "Heatmap"))) {
-        ggsave(paste0(filename, tiff_extension), plot, width = width, height = height, units = "in", dpi = 300)
-        ggsave(paste0(filename, pdf_extension), plot, width = width, height = height, units = "in")
+        ggsave(paste0(filename, tiff_extension), plot, width = width, height = height, units = "in", dpi = 300, bg = "white")
+        ggsave(paste0(filename, pdf_extension), plot, width = width, height = height, units = "in", bg = "white")
       } else if (is.function(plot)) {
         # for base-graphics functions that draw directly to the device (e.g. DimHeatmap)
         tiff(paste0(filename, tiff_extension), width = width, height = height, units = "in", res = 300)
