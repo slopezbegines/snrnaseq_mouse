@@ -28,7 +28,7 @@
   if (tolower(palette) %in% viridis_opts) {
     cols <- viridisLite::viridis(100, option = tolower(palette))
   } else {
-    n    <- RColorBrewer::brewer.pal.info[palette, "maxcolors"]
+    n <- RColorBrewer::brewer.pal.info[palette, "maxcolors"]
     cols <- RColorBrewer::brewer.pal(n, palette)
   }
   if (rev_palette) cols <- rev(cols)
@@ -52,13 +52,13 @@
 # Avoids NA entries when n > brewer.pal maxcolors (e.g. Set2 caps at 8).
 .hm_discrete_colors <- function(n, palette) {
   max_n <- RColorBrewer::brewer.pal.info[palette, "maxcolors"]
-  base  <- RColorBrewer::brewer.pal(max_n, palette)
+  base <- RColorBrewer::brewer.pal(max_n, palette)
   colorRampPalette(base)(n)
 }
 
 # Top annotation bar for a single condition vector.
 .hm_cond_anno <- function(cond_vals, split_by) {
-  levs   <- unique(cond_vals)
+  levs <- unique(cond_vals)
   colors <- setNames(.hm_discrete_colors(length(levs), "Set1"), levs)
   ComplexHeatmap::HeatmapAnnotation(
     condition               = cond_vals,
@@ -70,9 +70,9 @@
 
 # Two-row top annotation: cluster + condition (used by the combined heatmap).
 .hm_combined_anno <- function(cluster_vals, cond_vals, all_clusters, split_by) {
-  cl_levs     <- all_clusters
-  cond_levs   <- unique(cond_vals)
-  cl_colors   <- setNames(.hm_discrete_colors(length(cl_levs),   "Set2"), cl_levs)
+  cl_levs <- all_clusters
+  cond_levs <- unique(cond_vals)
+  cl_colors <- setNames(.hm_discrete_colors(length(cl_levs), "Set2"), cl_levs)
   cond_colors <- setNames(.hm_discrete_colors(length(cond_levs), "Set1"), cond_levs)
   ComplexHeatmap::HeatmapAnnotation(
     cluster               = cluster_vals,
@@ -84,7 +84,7 @@
 
 # Assemble a ComplexHeatmap::Heatmap object from a prepped matrix.
 .hm_build <- function(expr, title, col_fun, top_annotation,
-                       cluster_rows, cluster_cols, show_colnames, scale_rows) {
+                      cluster_rows, cluster_cols, show_colnames, scale_rows) {
   ComplexHeatmap::Heatmap(
     expr,
     name              = if (scale_rows) "z-score" else "Expression",
@@ -110,14 +110,16 @@
 # (ggsave cannot dispatch grid.draw on Heatmap objects).
 .hm_save <- function(name, ht, width, height, subdir) {
   save_plot(name, function() ComplexHeatmap::draw(ht),
-            width = width, height = height, subdir = subdir)
+    width = width, height = height, subdir = subdir
+  )
 }
 
 # Extract and optionally scale an expression matrix.
 .hm_expr <- function(seurat_obj, genes, cells, assay, layer, scale_rows) {
   mat <- as.matrix(
     Seurat::GetAssayData(seurat_obj, assay = assay, layer = layer)[
-      genes, cells, drop = FALSE
+      genes, cells,
+      drop = FALSE
     ]
   )
   if (scale_rows) .hm_scale(mat) else mat
@@ -126,12 +128,17 @@
 # Resolve and validate a `clusters` argument against a reference set.
 .hm_resolve_clusters <- function(clusters, reference) {
   reference <- as.character(reference)
-  if (is.null(clusters)) return(reference)
+  if (is.null(clusters)) {
+    return(reference)
+  }
   sel <- as.character(clusters)
   found <- sel[sel %in% reference]
-  if (length(found) == 0)
-    stop("None of the requested clusters (", paste(sel, collapse = ", "),
-         ") found in the Seurat object / DE table.")
+  if (length(found) == 0) {
+    stop(
+      "None of the requested clusters (", paste(sel, collapse = ", "),
+      ") found in the Seurat object / DE table."
+    )
+  }
   found
 }
 
@@ -159,24 +166,24 @@
 heatmap_de <- function(
   seurat_obj,
   cluster_markers,
-  clusters      = NULL,
-  fc            = NULL,
-  pval          = NULL,
-  n_top         = 20,
-  assay         = "RNA",
-  layer         = "data",
-  split_by      = "condition",
-  palette       = "RdBu",
-  rev_palette   = TRUE,
-  scale_rows    = TRUE,
-  cluster_rows  = TRUE,
-  cluster_cols  = FALSE,
+  clusters = NULL,
+  fc = NULL,
+  pval = NULL,
+  n_top = 20,
+  assay = "RNA",
+  layer = "data",
+  split_by = "condition",
+  palette = "RdBu",
+  rev_palette = TRUE,
+  scale_rows = TRUE,
+  cluster_rows = TRUE,
+  cluster_cols = FALSE,
   show_colnames = FALSE,
-  width         = 10,
-  height        = 8,
-  subdir        = "heatmaps"
+  width = 10,
+  height = 8,
+  subdir = "heatmaps"
 ) {
-  fc   <- if (is.null(fc))   get("FC",    envir = .GlobalEnv) else fc
+  fc <- if (is.null(fc)) get("FC", envir = .GlobalEnv) else fc
   pval <- if (is.null(pval)) get("p_val", envir = .GlobalEnv) else pval
 
   de <- cluster_markers %>%
@@ -191,38 +198,47 @@ heatmap_de <- function(
 
   for (cl in cl_ids) {
     cl_de <- de %>% dplyr::filter(as.character(cluster) == as.character(cl))
-    if (!is.null(n_top))
+    if (!is.null(n_top)) {
       cl_de <- cl_de %>% dplyr::slice_max(abs(avg_log2FC), n = n_top, with_ties = FALSE)
+    }
 
     genes <- cl_de %>%
       dplyr::arrange(dplyr::desc(avg_log2FC)) %>%
       dplyr::pull(gene) %>%
       intersect(rownames(seurat_obj))
 
-    if (length(genes) == 0) { message("Cluster ", cl, ": no genes — skipping."); next }
+    if (length(genes) == 0) {
+      message("Cluster ", cl, ": no genes — skipping.")
+      next
+    }
 
     cells <- .hm_cells(seurat_obj, cl)
-    if (length(cells) == 0) { message("Cluster ", cl, ": no cells — skipping."); next }
+    if (length(cells) == 0) {
+      message("Cluster ", cl, ": no cells — skipping.")
+      next
+    }
 
-    expr      <- .hm_expr(seurat_obj, genes, cells, assay, layer, scale_rows)
-    meta      <- seurat_obj@meta.data[cells, , drop = FALSE]
+    expr <- .hm_expr(seurat_obj, genes, cells, assay, layer, scale_rows)
+    meta <- seurat_obj@meta.data[cells, , drop = FALSE]
     cond_vals <- if (split_by %in% colnames(meta)) meta[[split_by]] else NULL
 
     if (!is.null(cond_vals)) {
-      ord       <- order(cond_vals)
-      expr      <- expr[, ord, drop = FALSE]
+      ord <- order(cond_vals)
+      expr <- expr[, ord, drop = FALSE]
       cond_vals <- cond_vals[ord]
     }
 
-    ha  <- if (!is.null(cond_vals)) .hm_cond_anno(cond_vals, split_by) else NULL
-    ht  <- .hm_build(
-      expr, title = paste0("Cluster ", cl, "  |  ", length(genes), " DE genes"),
-      col_fun       = .hm_col_fun(expr, palette, rev_palette, scale_rows),
+    ha <- if (!is.null(cond_vals)) .hm_cond_anno(cond_vals, split_by) else NULL
+    ht <- .hm_build(
+      expr,
+      title = paste0("Cluster ", cl, "  |  ", length(genes), " DE genes"),
+      col_fun = .hm_col_fun(expr, palette, rev_palette, scale_rows),
       top_annotation = ha,
-      cluster_rows  = cluster_rows, cluster_cols  = cluster_cols,
-      show_colnames = show_colnames, scale_rows    = scale_rows
+      cluster_rows = cluster_rows, cluster_cols = cluster_cols,
+      show_colnames = show_colnames, scale_rows = scale_rows
     )
     .hm_save(paste0("heatmap_de_cluster_", cl), ht, width, height, subdir)
+    print(ht) # forces rendering in interactive sessions
   }
   invisible(NULL)
 }
@@ -240,20 +256,20 @@ heatmap_de <- function(
 heatmap_genes <- function(
   seurat_obj,
   genes,
-  clusters      = NULL,
-  per_cluster   = FALSE,
-  assay         = "RNA",
-  layer         = "data",
-  split_by      = "condition",
-  palette       = "RdBu",
-  rev_palette   = TRUE,
-  scale_rows    = TRUE,
-  cluster_rows  = TRUE,
-  cluster_cols  = FALSE,
+  clusters = NULL,
+  per_cluster = FALSE,
+  assay = "RNA",
+  layer = "data",
+  split_by = "condition",
+  palette = "RdBu",
+  rev_palette = TRUE,
+  scale_rows = TRUE,
+  cluster_rows = TRUE,
+  cluster_cols = FALSE,
   show_colnames = FALSE,
-  width         = 10,
-  height        = 8,
-  subdir        = "heatmaps"
+  width = 10,
+  height = 8,
+  subdir = "heatmaps"
 ) {
   genes <- intersect(genes, rownames(seurat_obj))
   if (length(genes) == 0) {
@@ -270,38 +286,45 @@ heatmap_genes <- function(
     # ── One heatmap per selected cluster ──────────────────────────────────────
     for (cl in cl_ids) {
       cells <- .hm_cells(seurat_obj, cl)
-      if (length(cells) == 0) { message("Cluster ", cl, ": no cells — skipping."); next }
+      if (length(cells) == 0) {
+        message("Cluster ", cl, ": no cells — skipping.")
+        next
+      }
 
-      expr      <- .hm_expr(seurat_obj, genes, cells, assay, layer, scale_rows)
-      meta      <- seurat_obj@meta.data[cells, , drop = FALSE]
+      expr <- .hm_expr(seurat_obj, genes, cells, assay, layer, scale_rows)
+      meta <- seurat_obj@meta.data[cells, , drop = FALSE]
       cond_vals <- if (split_by %in% colnames(meta)) meta[[split_by]] else NULL
 
       if (!is.null(cond_vals)) {
-        ord       <- order(cond_vals)
-        expr      <- expr[, ord, drop = FALSE]
+        ord <- order(cond_vals)
+        expr <- expr[, ord, drop = FALSE]
         cond_vals <- cond_vals[ord]
       }
 
       ha <- if (!is.null(cond_vals)) .hm_cond_anno(cond_vals, split_by) else NULL
       ht <- .hm_build(
-        expr, title = paste0("Cluster ", cl, "  |  ", length(genes), " genes"),
-        col_fun       = .hm_col_fun(expr, palette, rev_palette, scale_rows),
+        expr,
+        title = paste0("Cluster ", cl, "  |  ", length(genes), " genes"),
+        col_fun = .hm_col_fun(expr, palette, rev_palette, scale_rows),
         top_annotation = ha,
-        cluster_rows  = cluster_rows, cluster_cols  = cluster_cols,
-        show_colnames = show_colnames, scale_rows    = scale_rows
+        cluster_rows = cluster_rows, cluster_cols = cluster_cols,
+        show_colnames = show_colnames, scale_rows = scale_rows
       )
       .hm_save(paste0("heatmap_genes_cluster_", cl), ht, width, height, subdir)
     }
-
   } else {
     # ── Single combined heatmap across all selected clusters ──────────────────
     cell_info <- do.call(rbind, lapply(cl_ids, function(cl) {
       cells <- .hm_cells(seurat_obj, cl)
-      if (length(cells) == 0) return(NULL)
-      meta  <- seurat_obj@meta.data[cells, , drop = FALSE]
-      cond  <- if (split_by %in% colnames(meta)) meta[[split_by]] else NA_character_
-      data.frame(cell = cells, cluster = cl, condition = as.character(cond),
-                 stringsAsFactors = FALSE)
+      if (length(cells) == 0) {
+        return(NULL)
+      }
+      meta <- seurat_obj@meta.data[cells, , drop = FALSE]
+      cond <- if (split_by %in% colnames(meta)) meta[[split_by]] else NA_character_
+      data.frame(
+        cell = cells, cluster = cl, condition = as.character(cond),
+        stringsAsFactors = FALSE
+      )
     }))
 
     if (is.null(cell_info) || nrow(cell_info) == 0) {
@@ -318,12 +341,13 @@ heatmap_genes <- function(
     ht <- .hm_build(
       expr,
       title = paste0(length(genes), " genes  |  clusters: ", paste(cl_ids, collapse = ", ")),
-      col_fun       = .hm_col_fun(expr, palette, rev_palette, scale_rows),
+      col_fun = .hm_col_fun(expr, palette, rev_palette, scale_rows),
       top_annotation = ha,
-      cluster_rows  = cluster_rows, cluster_cols  = cluster_cols,
-      show_colnames = show_colnames, scale_rows    = scale_rows
+      cluster_rows = cluster_rows, cluster_cols = cluster_cols,
+      show_colnames = show_colnames, scale_rows = scale_rows
     )
     .hm_save("heatmap_genes_combined", ht, width, height, subdir)
+    print(ht) # forces rendering in interactive sessions)
   }
 
   invisible(NULL)
@@ -353,18 +377,18 @@ heatmap_genes <- function(
 heatmap_mean <- function(
   seurat_obj,
   genes,
-  clusters      = NULL,
-  split_by      = "condition",
-  assay         = "RNA",
-  layer         = "data",
-  scale_rows    = TRUE,
-  cluster_rows  = TRUE,
-  cluster_cols  = FALSE,
-  palette       = "RdBu",
-  rev_palette   = TRUE,
-  width         = 8,
-  height        = 6,
-  subdir        = "heatmaps"
+  clusters = NULL,
+  split_by = "condition",
+  assay = "RNA",
+  layer = "data",
+  scale_rows = TRUE,
+  cluster_rows = TRUE,
+  cluster_cols = FALSE,
+  palette = "RdBu",
+  rev_palette = TRUE,
+  width = 8,
+  height = 6,
+  subdir = "heatmaps"
 ) {
   genes <- intersect(genes, rownames(seurat_obj))
   if (length(genes) == 0) {
@@ -378,15 +402,16 @@ heatmap_mean <- function(
   )
 
   # Build per-(cluster × condition) mean expression matrix ─────────────────────
-  meta      <- seurat_obj@meta.data
+  meta <- seurat_obj@meta.data
   expr_data <- Seurat::GetAssayData(seurat_obj, assay = assay, layer = layer)
 
-  if (!split_by %in% colnames(meta))
+  if (!split_by %in% colnames(meta)) {
     stop("'split_by' column '", split_by, "' not found in Seurat metadata.")
+  }
 
-  meta$..cl   <- as.character(Idents(seurat_obj))
+  meta$..cl <- as.character(Idents(seurat_obj))
   meta$..cond <- as.character(meta[[split_by]])
-  meta_sel    <- meta[meta$..cl %in% cl_ids, , drop = FALSE]
+  meta_sel <- meta[meta$..cl %in% cl_ids, , drop = FALSE]
 
   groups <- unique(meta_sel[, c("..cl", "..cond")])
   groups <- groups[order(groups$..cl, groups$..cond), ]
@@ -411,9 +436,9 @@ heatmap_mean <- function(
   if (scale_rows) avg_mat <- .hm_scale(avg_mat)
 
   # Column annotation: cluster + condition bars ─────────────────────────────────
-  cl_levs     <- unique(groups$..cl)
-  cond_levs   <- unique(groups$..cond)
-  cl_colors   <- setNames(.hm_discrete_colors(length(cl_levs),   "Set2"), cl_levs)
+  cl_levs <- unique(groups$..cl)
+  cond_levs <- unique(groups$..cond)
+  cl_colors <- setNames(.hm_discrete_colors(length(cl_levs), "Set2"), cl_levs)
   cond_colors <- setNames(.hm_discrete_colors(length(cond_levs), "Set1"), cond_levs)
   ha <- ComplexHeatmap::HeatmapAnnotation(
     cluster              = groups$..cl,
@@ -424,15 +449,16 @@ heatmap_mean <- function(
 
   ht <- .hm_build(
     avg_mat,
-    title         = paste0("Mean expression  |  ", length(genes), " genes"),
-    col_fun       = .hm_col_fun(avg_mat, palette, rev_palette, scale_rows),
+    title = paste0("Mean expression  |  ", length(genes), " genes"),
+    col_fun = .hm_col_fun(avg_mat, palette, rev_palette, scale_rows),
     top_annotation = ha,
-    cluster_rows  = cluster_rows,
-    cluster_cols  = cluster_cols,
-    show_colnames = TRUE,      # groups are few enough to always label
-    scale_rows    = scale_rows
+    cluster_rows = cluster_rows,
+    cluster_cols = cluster_cols,
+    show_colnames = TRUE, # groups are few enough to always label
+    scale_rows = scale_rows
   )
 
   .hm_save("heatmap_mean", ht, width, height, subdir)
+  print(ht) # forces rendering in interactive sessions
   invisible(NULL)
 }
