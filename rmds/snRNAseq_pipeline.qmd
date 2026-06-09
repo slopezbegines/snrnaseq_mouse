@@ -4,7 +4,7 @@ author: "Santiago López Begines"
 date: "`r Sys.Date()`"
 format:
   html:
-    theme: minty
+    theme: lux
     toc: true
     toc-location: left
     toc-depth: 3
@@ -2522,6 +2522,7 @@ plot_volcano_clusters(cluster_markers_by_condition, top_n = 15, subdir = "DE/vol
 ```{r go_enrichment}
 source("../code/04_go_enrichment.R")
 run_go_enrichment(cluster_markers_by_condition)
+plot_go_enrichment(go_results, show_n = 10, subdir = "enrichGO")
 ```
 
 # Strings
